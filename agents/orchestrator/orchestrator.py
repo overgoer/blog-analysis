@@ -236,6 +236,13 @@ def channel_write_post(topic, brief_text, ga_verdict):
         - No emoji abuse (1-2 max)
         - No clickbait. No "90% тестировщиков..."
         - ~500-800 chars total. If BEST_ANGLE has multiple points, can go up to 1200.
+        - CRITICAL: Assume the reader knows terms exist but not the details.
+          Briefly explain key terms INLINE (1-2 words in parentheses or a short clause).
+          Example: "ставит `alg:none`" → "ставит `alg:none` (алгоритм без подписи)"
+          Example: "измени payload" → "измени payload (тело токена — данные пользователя)"
+          Example: "ETag — это хеш контента" → add "хеш (отпечаток данных)"
+          The goal: reader nods "ага, понятно" instead of googling mid-post.
+        - NOT an encyclopedia. No long theory blocks. Just 1-2 word clarifications inline.
         - Write in RUSSIAN
     """)
 
