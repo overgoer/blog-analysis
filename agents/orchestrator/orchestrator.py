@@ -243,6 +243,11 @@ def channel_write_post(topic, brief_text, ga_verdict):
           Example: "ETag — это хеш контента" → add "хеш (отпечаток данных)"
           The goal: reader nods "ага, понятно" instead of googling mid-post.
         - NOT an encyclopedia. No long theory blocks. Just 1-2 word clarifications inline.
+        - When appropriate, add 1-2 USEFUL LINKS for further reading.
+          Examples: ссылка на MDN для HTTP-заголовков, Stripe docs для платёжных кейсов,
+          RFC/спецификацию для спорных моментов, статью на Habr если есть хорошая.
+          Links go at the end of the post: "Полезно: [MDN: ETag](url)"
+          ONLY add links when they genuinely add value. Don't force it.
         - Write in RUSSIAN
     """)
 
@@ -392,6 +397,17 @@ def main():
     log("=" * 50)
     log("ORCHESTRATOR START")
     log("=" * 50)
+
+    # Phase 0: Check email commands
+    log("Phase 0: Checking email commands...")
+    try:
+        sys.path.insert(0, str(BASE / "orchestrator"))
+        from orchestrator_cmds import check_mail
+        cmds_processed = check_mail()
+        if cmds_processed:
+            log(f"Processed {len(cmds_processed)} email commands")
+    except Exception as e:
+        log(f"  Email check skipped: {e}")
 
     # Phase 1: Pick topic
     log("Phase 1: Picking topic...")
