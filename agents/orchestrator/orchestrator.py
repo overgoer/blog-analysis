@@ -208,9 +208,20 @@ def ga_review_brief(topic, brief_text):
 
 def channel_write_post(topic, brief_text, ga_verdict):
     """Channel Agent writes a post draft from the brief."""
+    # Extract BEST_ANGLE from GA verdict
+    best_angle = ""
+    for line in ga_verdict.split("\n"):
+        if line.startswith("BEST_ANGLE") or line.startswith("**BEST_ANGLE"):
+            best_angle = line.split(":", 1)[-1].strip() if ":" in line else line
+            break
+
     system = textwrap.dedent("""\
         You are a Channel Agent for @eddytester — a QA testing channel.
-        Your job: Write a Telegram post draft from a research brief.
+        Your job: Write a post draft based on a research brief.
+
+        CRITICAL: The GA review provides a BEST_ANGLE — a specific angle for the post.
+        Your post MUST cover the BEST_ANGLE, NOT just the first thing from the brief.
+        If BEST_ANGLE describes a multi-point checklist (e.g., "5 bugs"), write ALL points.
 
         FORMAT (exact):
         - Situation: 1-2 sentences describing the problem or question
@@ -224,56 +235,140 @@ def channel_write_post(topic, brief_text, ga_verdict):
         - Natural slang: "кейс", "прод", "баг", "зашквар"
         - No emoji abuse (1-2 max)
         - No clickbait. No "90% тестировщиков..."
-        - ~500-800 chars total
+        - ~500-800 chars total. If BEST_ANGLE has multiple points, can go up to 1200.
         - Write in RUSSIAN
     """)
 
     user = (
         f"Topic: {topic}\n\n"
+        f"BEST_ANGLE to cover: {best_angle}\n\n"
         f"Research brief:\n{brief_text[:4000]}\n\n"
-        f"GA review:\n{ga_verdict}"
+        f"Full GA review for context:\n{ga_verdict}"
     )
-    return dk(system, user, temperature=0.5, max_tokens=1500)
+    return dk(system, user, temperature=0.5, max_tokens=2000)
 
 
-def send_email(topic, ga_review_result, post_draft, brief_path):
-    """Send digest email via mailer."""
-    subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
+def md_to_html(text):
+    """Convert simple markdown to HTML for email."""
+    lines = text.splitlines()
+    html_parts = []
+    in_list = False
 
-    body = f"""\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430
+    for line in lines:
+        if line.startswith("### "):
+            if in_list: html_parts.append("</ul>"); in_list = False
+            html_parts.append(f"<h3>{line[4:]}</h3>")
+        elif line.startswith("## "):
+            if in_list: html_parts.append("</ul>"); in_list = False
+            html_parts.append(f"<h2>{line[3:]}</h2>")
+        elif line.startswith("# "):
+            if in_list: html_parts.append("</ul>"); in_list = False
+            html_parts.append(f"<h1>{line[2:]}</h1>")
+        elif line.startswith("- "):
+            if not in_list: html_parts.append("<ul>"); in_list = True
+            html_parts.append(f"<li>{line[2:]}</li>")
+        elif line.startswith("  - "):
+            html_parts.append(f"<li style='margin-left:20px;'>{line[4:]}</li>")
+        elif line.startswith("---") or line.startswith("\u2500"):
+            if in_list: html_parts.append("</ul>"); in_list = False
+            html_parts.append("<hr>")
+        elif not line.strip():
+            if in_list: html_parts.append("</ul>"); in_list = False
+            html_parts.append("<br>")
+        else:
+            if in_list: html_parts.append("</ul>"); in_list = False
+            line = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line)
+            line = re.sub(r"`(.+?)`", r"<code>\1</code>", line)
+            html_parts.append(f"<p>{line}</p>")
+
+    if in_list:
+        html_parts.append("</ul>")
+    return "\n".join(html_parts)
+
+
+def format_email_html(topic, ga_review_result, post_draft, brief_path):
+    """Build HTML email body."""
+    ga_html = md_to_html(ga_review_result)
+    post_html = md_to_html(post_draft)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;max-width:600px;margin:0 auto;padding:16px;">
+<div style="background:#f8f9fa;border-radius:12px;padding:16px;margin-bottom:16px;">
+  <div style="font-size:11px;color:#666;margin-bottom:4px;">\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430</div>
+  <div style="font-size:12px;color:#999;">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+</div>
+
+<h1 style="font-size:18px;font-weight:600;margin:0 0 16px 0;">{topic[:80]}</h1>
+
+{ga_html}
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+{post_html}
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+<div style="background:#f0fdf4;border-radius:8px;padding:12px;font-size:12px;color:#166534;">
+  <b>\u041f\u043e\u043b\u043d\u044b\u0439 \u0431\u0440\u0438\u0444:</b> {brief_path.split('/')[-1]}
+</div>
+
+<div style="background:#fef3c7;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#92400e;">
+  <b>\u041a\u043e\u043c\u0430\u043d\u0434\u044b \u0434\u043b\u044f \u043e\u0442\u0432\u0435\u0442\u0430:</b><br>
+  <b>\u0442\u0433 1</b> \u2014 \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d, \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439<br>
+  <b>\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ...</b> \u2014 \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430<br>
+  <b>\u0432 \u043f\u0443\u043b: ...</b> \u2014 \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443
+</div>
+
+<div style="text-align:center;font-size:11px;color:#999;margin-top:16px;">
+  \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440 @eddytester
+</div>
+</body></html>"""
+
+
+def format_email_plain(topic, ga_review_result, post_draft, brief_path):
+    """Build plain text fallback."""
+    return f"""\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430
 \u0414\u0430\u0442\u0430: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
 \u0422\u0435\u043c\u0430: {topic}
 
-\u2500\u2500 GA Review \u2500\u2500
+-- GA Review --
 {ga_review_result}
 
-\u2500\u2500 \u041f\u0440\u043e\u0435\u043a\u0442 \u043f\u043e\u0441\u0442\u0430 \u2500\u2500
+-- \u041f\u0440\u043e\u0435\u043a\u0442 \u043f\u043e\u0441\u0442\u0430 --
 {post_draft}
 
-\u2500\u2500 \u0411\u0440\u0438\u0444 \u2500\u2500
-\u041f\u043e\u043b\u043d\u044b\u0439 \u0431\u0440\u0438\u0444 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d: {brief_path}
+-- \u0411\u0440\u0438\u0444 --
+{brief_path.split('/')[-1]}
 
-\u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u044d\u0442\u043e \u043f\u0438\u0441\u044c\u043c\u043e \u043a\u043e\u043c\u0430\u043d\u0434\u0430\u043c\u0438:
-  "\u0442\u0433 1" \u2014 \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d, \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439
-  "\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ..." \u2014 \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430, \u0434\u043e\u0431\u0430\u0432\u044c \u043f\u0440\u0438\u0447\u0438\u043d\u0443
-  "\u0432 \u043f\u0443\u043b: ..." \u2014 \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443 \u0432 \u043f\u0443\u043b
+\u041a\u043e\u043c\u0430\u043d\u0434\u044b:
+  "\u0442\u0433 1" \u2014 \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d
+  "\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ..." \u2014 \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430
+  "\u0432 \u043f\u0443\u043b: ..." \u2014 \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443
 """
+
+
+def send_email(topic, ga_review_result, post_draft, brief_path):
+    """Send digest email via mailer with HTML formatting."""
+    subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
+    html = format_email_html(topic, ga_review_result, post_draft, brief_path)
+    plain = format_email_plain(topic, ga_review_result, post_draft, brief_path)
 
     try:
         import sys as _sys
         _sys.path.insert(0, str(BASE.parent / "lib"))
         from mailer import load_config, send
         cfg = load_config(str(BASE / ".mailcfg"))
-        send(subject, body, cfg=cfg)
+        send(subject, plain, html=html, cfg=cfg)
         log("Email sent to eddy.super1@gmail.com")
     except Exception as e:
         log(f"  Email failed: {e}, saving locally")
         archive = BASE.parent / "logs" / "email_archive"
         os.makedirs(archive, exist_ok=True)
-        (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").write_text(
-            f"Subject: {subject}\n\n{body}"
-        )
+        (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html").write_text(html)
+        (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").write_text(plain)
 
 
 # ── Main ──────────────────────────────────────────────────────────────
