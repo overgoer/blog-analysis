@@ -4,3 +4,4 @@ __pycache__
 .mailcfg
 *.log
 node_modules/
+.venv/
