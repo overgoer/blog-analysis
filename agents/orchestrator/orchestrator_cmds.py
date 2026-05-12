@@ -31,6 +31,8 @@ TOPICS_FILE = BASE / "researcher" / "topics.json"
 MAILCFG = BASE / ".mailcfg"
 LOG_FILE = Path("/root/blog-analysis/logs/cmd_processor.log")
 PROCESSED_DIR = BASE / "orchestrator" / "processed_cmds"
+SENT_FOLDER = "[Gmail]/&BB4EQgQ,BEAEMAQyBDsENQQ9BD0ESwQ1-"
+PROCESSED_IDS_FILE = BASE / "orchestrator" / "processed_ids.txt"
 
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(LOG_FILE.parent, exist_ok=True)
@@ -132,34 +134,34 @@ def strip_reply_quote(body):
     return "\n".join(clean).strip()
 
 
-def parse_command(body):
-    """Parse a single email body for orchestrator commands."""
+def parse_commands(body):
+    """Parse an email body for orchestrator commands. Returns a list of command dicts."""
     body_lower = body.lower().strip()
-    result = {"cmd": None, "args": None, "raw": body[:200]}
+    results = []
 
-    # "тг 1" — approve post (IMAP processing)
-    m = re.search(r"\u0442\u0433\s*1", body_lower)  # "тг 1"
-    if m:
-        result["cmd"] = "\u0442\u0433 1"
-        return result
+    # "тг 1" — approve post
+    if re.search(r"\u0442\u0433\s*1", body_lower):
+        results.append({"cmd": "\u0442\u0433 1", "args": None})
 
-    # "зашквар: X" — block topic
-    m = re.search(r"\u0437\u0430\u0448\u043a\u0432\u0430\u0440\s*[:]\s*(.+)", body_lower)  # "зашквар:"
-    if m:
-        result["cmd"] = "\u0437\u0430\u0448\u043a\u0432\u0430\u0440"
-        result["args"] = m.group(1).strip().strip('"').strip("'")
-        return result
+    # "зашквар: X" — block topic (find ALL occurrences)
+    for m in re.finditer(r"\u0437\u0430\u0448\u043a\u0432\u0430\u0440\s*[:]\s*(.+)", body_lower):
+        topic = m.group(1).strip().strip('"').strip("'")
+        if len(topic) > 5:
+            results.append({"cmd": "\u0437\u0430\u0448\u043a\u0432\u0430\u0440", "args": topic})
 
-    # "в пул: X" — add topic to pool
-    m = re.search(r"\u0432\s+\u043f\u0443\u043b\s*[:]\s*(.+)", body_lower)  # "в пул:"
-    if m:
-        result["cmd"] = "\u0432 \u043f\u0443\u043b"
-        result["args"] = m.group(1).strip().strip('"').strip("'")
-        return result
+    # "в пул: X" — add topic to pool (find ALL occurrences)
+    for m in re.finditer(r"\u0432\s+\u043f\u0443\u043b\s*[:]\s*(.+)", body_lower):
+        topic = m.group(1).strip().strip('"').strip("'")
+        if len(topic) > 10:
+            results.append({"cmd": "\u0432 \u043f\u0443\u043b", "args": topic})
 
-    return result
+    return results
 
 
+def parse_command(body):
+    """Legacy wrapper, parses and returns first command."""
+    results = parse_commands(body)
+    return results[0] if results else {"cmd": None, "args": None}
 def execute_command(result, subject):
     """Execute a parsed command."""
     cmd = result["cmd"]
@@ -213,7 +215,7 @@ def process_email(msg, msg_id):
 
     log(f"  From: {from_addr} | Subject: {subject[:60]}")
 
-    # Only process from eddy's address — then try to parse commands from any email
+    # Only process from eddy's address
     if "eddy.super1" not in from_addr and "overgoer" not in from_addr:
         log("  SKIP: not from Eddy")
         return False
@@ -225,34 +227,126 @@ def process_email(msg, msg_id):
         log("  SKIP: no text body found")
         return False
 
-    result = parse_command(clean_body)
-    if not result["cmd"]:
-        log(f"  SKIP: no command found in: {result['raw'][:80]}")
+    cmd_results = parse_commands(clean_body)
+    if not cmd_results:
+        log("  SKIP: no command found")
         return False
 
-    status = execute_command(result, subject)
+    any_executed = False
+    for cmd_result in cmd_results:
+        status = execute_command(cmd_result, subject)
 
-    # Save processed command
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    record = {
-        "timestamp": ts,
-        "subject": subject,
-        "from": from_addr,
-        "command": result["cmd"],
-        "args": result["args"],
-        "status": status,
-    }
-    with open(PROCESSED_DIR / f"cmd_{ts}.json", "w") as f:
-        json.dump(record, f, indent=2, ensure_ascii=False)
+        # Save each processed command
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        record = {
+            "timestamp": ts,
+            "subject": subject,
+            "from": from_addr,
+            "command": cmd_result["cmd"],
+            "args": cmd_result["args"],
+            "status": status,
+        }
+        with open(PROCESSED_DIR / f"cmd_{ts}.json", "w") as f:
+            json.dump(record, f, indent=2, ensure_ascii=False)
+        any_executed = True
 
-    return True
+    return any_executed
+def load_processed_ids():
+    """Load set of already-processed message UIDs."""
+    if not PROCESSED_IDS_FILE.exists():
+        return set()
+    with open(PROCESSED_IDS_FILE) as f:
+        return set(line.strip() for line in f if line.strip())
+
+
+def save_processed_ids(ids):
+    """Save processed message UIDs."""
+    with open(PROCESSED_IDS_FILE, "w") as f:
+        for mid in sorted(ids):
+            f.write(mid + "\n")
+
+
+def check_folder(mail, folder_name, processed_ids, since_date=None):
+    """Check a single IMAP folder for commands from Eddy."""
+    results = []
+    try:
+        status, _ = mail.select(folder_name)
+        if status != "OK":
+            log(f"  Cannot select folder: {folder_name}")
+            return results
+        search_cmd = '(FROM "eddy.super1")'
+        if since_date:
+            search_cmd = f'(SINCE "{since_date}" FROM "eddy.super1")'
+        status, messages = mail.search(None, search_cmd)
+        if status != "OK" or not messages[0]:
+            return results
+        msg_ids = messages[0].split()
+        new_ids = [m for m in msg_ids if m.decode() not in processed_ids]
+        if not new_ids:
+            return results
+        for mid in new_ids:
+            mid_str = mid.decode()
+            status, data = mail.fetch(mid, "(RFC822)")
+            if status != "OK":
+                continue
+            msg = email.message_from_bytes(data[0][1])
+            if process_email(msg, mid_str):
+                results.append(mid_str)
+        return results
+    except Exception as e:
+        log(f"  Folder error ({folder_name}): {e}")
+        return results
 
 
 def check_mail():
-    """Connect to IMAP, find unread digest replies, process commands."""
+    """Connect to IMAP, check INBOX + Sent Mail for commands from Eddy."""
     cfg = load_mailcfg()
     username = cfg.get("username", "eddy.super1@gmail.com")
     password = cfg.get("password", "")
+
+    if not password:
+        log("ERROR: no SMTP password in .mailcfg")
+        return []
+
+    processed_ids = load_processed_ids()
+    all_processed = []
+
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=15)
+        mail.login(username, password)
+        try:
+            mail._simple_command("ENABLE", "UTF8")
+        except:
+            pass
+
+        # Check INBOX
+        log("Checking INBOX...")
+        inbox_results = check_folder(mail, "INBOX", processed_ids)
+        all_processed.extend(inbox_results)
+        if inbox_results:
+            log(f"  Found {len(inbox_results)} commands in INBOX")
+
+        # Check Sent Mail — only last 7 days to avoid scanning years of history
+        log("Checking Sent Mail (last 7 days)...")
+        from datetime import datetime, timedelta
+        since_date = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
+        sent_results = check_folder(mail, SENT_FOLDER, processed_ids, since_date)
+        all_processed.extend(sent_results)
+        if sent_results:
+            log(f"  Found {len(sent_results)} commands in Sent Mail")
+
+        # Save processed IDs
+        all_ids = processed_ids | set(all_processed)
+        for mid in all_processed:
+            mail.store(mid, "+FLAGS", "\\Seen")
+        save_processed_ids(all_ids)
+
+        mail.logout()
+        return all_processed
+
+    except Exception as e:
+        log(f"IMAP ERROR: {e}")
+        return []
 
     if not password:
         log("ERROR: no SMTP password in .mailcfg")
