@@ -1,0 +1,6 @@
+__pycache__
+*.pyc
+.env
+.mailcfg
+*.log
+node_modules/

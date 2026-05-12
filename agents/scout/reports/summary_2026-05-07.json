@@ -1,0 +1,123 @@
+{
+  "date": "2026-05-07",
+  "channels_analyzed": 10,
+  "competitor_results": {
+    "qabigtech": {
+      "total": 15,
+      "categories": [
+        "engagement",
+        "practicum/portfolio",
+        "API",
+        "guide",
+        "AI/LLM",
+        "news",
+        "bugs",
+        "career"
+      ],
+      "error": null
+    },
+    "qachanell": {
+      "total": 15,
+      "categories": [
+        "engagement",
+        "API",
+        "education",
+        "other",
+        "guide",
+        "AI/LLM"
+      ],
+      "error": null
+    },
+    "burning_tester": {
+      "total": 15,
+      "categories": [
+        "career",
+        "education",
+        "engagement",
+        "bugs",
+        "other"
+      ],
+      "error": null
+    },
+    "rvtsakunov": {
+      "total": 15,
+      "categories": [
+        "career",
+        "news",
+        "automation"
+      ],
+      "error": null
+    },
+    "rvtsakunov_manual": {
+      "total": 15,
+      "categories": [
+        "career",
+        "engagement",
+        "guide"
+      ],
+      "error": null
+    },
+    "protestinginfo": {
+      "total": 15,
+      "categories": [
+        "API",
+        "engagement"
+      ],
+      "error": null
+    },
+    "qa_chillout": {
+      "total": 5,
+      "categories": [
+        "engagement",
+        "API",
+        "career"
+      ],
+      "error": null
+    },
+    "testerlib": {
+      "total": 15,
+      "categories": [
+        "engagement",
+        "automation",
+        "AI/LLM",
+        "API"
+      ],
+      "error": null
+    },
+    "serious_tester": {
+      "total": 15,
+      "categories": [
+        "engagement",
+        "career",
+        "education",
+        "other",
+        "news",
+        "practicum/portfolio"
+      ],
+      "error": null
+    },
+    "qa_and_it": {
+      "total": 15,
+      "categories": [
+        "career",
+        "other",
+        "bugs"
+      ],
+      "error": null
+    }
+  },
+  "gaps": [
+    {
+      "category": "career",
+      "eddy_pct": 11.9,
+      "competitor_avg_pct": 26.1,
+      "gap": 14.2
+    },
+    {
+      "category": "engagement",
+      "eddy_pct": 23.8,
+      "competitor_avg_pct": 32.4,
+      "gap": 8.6
+    }
+  ]
+}

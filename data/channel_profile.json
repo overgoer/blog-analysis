@@ -1,0 +1,42 @@
+{
+  "total_posts": 376,
+  "text_posts": 235,
+  "media_posts": 325,
+  "avg_post_length_chars": 516,
+  "posts_with_links": 21,
+  "topics": {
+    "api": 120,
+    "ai": 73,
+    "career": 71,
+    "sql": 41,
+    "devops": 24,
+    "memes": 19,
+    "tools": 18,
+    "security": 14,
+    "automation": 8
+  },
+  "recent_links": [
+    "https://www.youtube.com/watch?v=vZm0lHciFsQ&t=473s",
+    "https://www.youtube.com/@eddytester",
+    "https://t.me/rozetked/23852",
+    "https://serpstat.com/blog/how-long-should-be-the-page-url-length-for-seo/#ip4x5j)",
+    "https://t.me/c/1948889455/839",
+    "https://www.postman.com/collections/<collection-id>",
+    "https://t.me/eddytester?livestream",
+    "https://boosty.to/eddytester",
+    "https://www.youtube.com/@eddytester",
+    "https://boosty.to/eddytester/",
+    "https://lnkd.in/d-pidexy",
+    "https://lnkd.in/d4x89FCJ",
+    "https://lnkd.in/dxjm_smR",
+    "https://lnkd.in/d3kPXxuY",
+    "https://lnkd.in/deM6TUza",
+    "https://lnkd.in/dVcmUSSK",
+    "https://lnkd.in/dcVQmfKt",
+    "https://lnkd.in/dxWH5YeT"
+  ],
+  "post_length_range": [
+    1,
+    3514
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-05-07T21:44:22.093969",
+  "candidates_api": {
+    "file": "server.js",
+    "lines": 143,
+    "endpoints": [
+      "app.use",
+      "app.get"
+    ]
+  },
+  "free_trial_api": {
+    "file": "server.js",
+    "lines": 112
+  },
+  "practicum_bot": {
+    "file": "main.py",
+    "lines": 679,
+    "handlers": [
+      "def init_db():",
+      "def upsert_user(tg_id, username, step, **extra):",
+      "def update_user_step(tg_id, step):",
+      "def kb_back_to_tasks():",
+      "def kb_next(next_cb: str, text=\"Дальше ➡\"):",
+      "def kb_url(text: str, url: str):",
+      "@dp.message(Command(\"start\"), flags={\"long_operation\": True})",
+      "async def cmd_start(message: types.Message, state: FSMContext):",
+      "async def start_task1(callback: types.CallbackQuery, state: FSMContext):",
+      "async def check_task1(callback: types.CallbackQuery, state: FSMContext):",
+      "async def start_task2(callback: types.CallbackQuery, state: FSMContext):",
+      "async def check_task2(callback: types.CallbackQuery, state: FSMContext):",
+      "async def start_task3(callback: types.CallbackQuery, state: FSMContext):",
+      "async def check_task3(callback: types.CallbackQuery, state: FSMContext):",
+      "async def start_task4(callback: types.CallbackQuery, state: FSMContext):"
+    ]
+  },
+  "bugs_summary": "# API Bugs Documentation (v0-test-api)\n\nThis document provides a concise, AI-friendly summary of all bugs present in the API v0-test-api.  \nBugs are organized by HTTP method and endpoint. Each entry includes metadata for easy programmatic parsing.\n\n**Format Key:**\n- `[BUG_ID]`: Unique identifier (ME",
+  "task_backlog": {
+    "tasks": [],
+    "completed": []
+  }
+}

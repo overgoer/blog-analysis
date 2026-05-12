@@ -1,0 +1,16 @@
+{
+  "primary": [
+    {"id": "qabigtech", "name": "Sergey Lebedev QA", "desc": "QA Lead v big tech, karera, sobesy", "focus": "career"},
+    {"id": "qachanell", "name": "Artsiom Rusau QA Life", "desc": "QA kursy, AI instrumenty", "focus": "training"},
+    {"id": "burning_tester", "name": "Goryashiy Tester", "desc": "QA Lead Anton Duenin", "focus": "career"},
+    {"id": "rvtsakunov", "name": "Roman Tsakunov PRO AVTOTESTY", "desc": "Avtomatizatsiya QA", "focus": "automation"},
+    {"id": "rvtsakunov_manual", "name": "Vkatyvaemsya v QA Manual", "desc": "Manual testing entry", "focus": "manual"},
+    {"id": "protestinginfo", "name": "ProTestingInfo", "desc": "Teoriya testirovaniya", "focus": "theory"}
+  ],
+  "extended": [
+    {"id": "qa_chillout", "name": "Testirovshiki nuzhny", "desc": "QA kanal Stanislava Yakovleva", "focus": "career"},
+    {"id": "testerlib", "name": "Biblioteka testirovshika", "desc": "QA materialy, knigi", "focus": "library"},
+    {"id": "serious_tester", "name": "Serezny testirovshik", "desc": "Krupny QA kanal 31K", "focus": "aggregator"},
+    {"id": "qa_and_it", "name": "Testing QA", "desc": "Ezhednevnye QA materialy", "focus": "general"}
+  ]
+}

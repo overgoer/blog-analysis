@@ -1,0 +1,8 @@
+Subject: Test Nightly Digest
+
+Daily agents report
+
+SCOUT: 10 channels analyzed
+EDUCATOR: backend tip generated
+
+This is a fallback test (SMTP ports blocked).

@@ -1,0 +1,26 @@
+{
+  "sent_topics": [
+    "Circuit Breaker Pattern",
+    "Sessions vs Tokens",
+    "HATEOAS & REST Discovery",
+    "Message Queues (RabbitMQ, Kafka)",
+    "SQL: Transactions & Rollback",
+    "JWT (JSON Web Tokens)",
+    "Postman: Tests Tab & Assertions",
+    "Postman: Collections & Environments",
+    "Postman: Pre-request Scripts",
+    "HTTP Status Codes: 2xx & 3xx",
+    "CORS (Cross-Origin Resource Sharing)",
+    "WebSocket Basics",
+    "Database Migrations",
+    "API Idempotency",
+    "Rate Limiting (429 Too Many Requests)",
+    "HTTP Status Codes: 4xx & 5xx",
+    "Content Negotiation (Accept / Content-Type)",
+    "HTTP Method Semantics",
+    "SQL: INNER JOIN vs LEFT JOIN",
+    "Logging & Correlation IDs",
+    "SQL: EXPLAIN Query Plan"
+  ],
+  "last_digest": null
+}
