@@ -230,6 +230,28 @@ def raw_write_content(topic, brief_text, ga_verdict):
     return dk(system, user, temperature=0.6, max_tokens=4096)
 
 
+
+def _fix_mixed_layout(text):
+    """Replace latin lookalikes in Russian text (safety net for LLM tokenizer artifacts)."""
+    trans = str.maketrans({
+        chr(0x0063): chr(0x0441),  # c → с
+        chr(0x0065): chr(0x0435),  # e → е
+        chr(0x006A): chr(0x0439),  # j → й
+        chr(0x006F): chr(0x043E),  # o → о
+        chr(0x0070): chr(0x0440),  # p → р
+        chr(0x0078): chr(0x0445),  # x → х
+        chr(0x0079): chr(0x0443),  # y → у
+        chr(0x0061): chr(0x0430),  # a → а
+    })
+    result = []
+    for line in text.split(chr(10)):
+        has_cyrillic = any(chr(1072) <= ord(c) <= chr(1103) or chr(1040) <= ord(c) <= chr(1071) for c in line)
+        if has_cyrillic:
+            result.append(line.translate(trans))
+        else:
+            result.append(line)
+    return chr(10).join(result)
+
 def style_adapter(topic, raw_content, ga_verdict):
     # Phase 4: STYLE ADAPTER - adapt raw content to channel style (replaces channel_write_post)
     best_angle = ''
@@ -247,7 +269,7 @@ def style_adapter(topic, raw_content, ga_verdict):
         '2. NO em dashes. Use regular hyphens (-) instead.\n'
         '3. Short paragraphs. 1-3 sentences each. Lots of whitespace.\n'
         '4. Natural flow: start with a hook, unpack technically, end with a takeaway.\n'
-        '5. Natural slang: "kejc", "prod", "bag", "zashkvar"\n'
+        '5. Natural slang: "кейс", "прод", "баг", "зашквар"\n'
         '6. No emoji abuse (1-2 max)\n'
         '7. ~500-800 chars total (can go to 1200 if BEST_ANGLE has many points)\n'
         '8. Explain key terms INLINE\n'
@@ -266,7 +288,7 @@ def style_adapter(topic, raw_content, ga_verdict):
         f'GA Review:\n{ga_verdict}'
     )
     result = dk(system, user, temperature=0.5, max_tokens=2000)
-    return result.replace('\u2014', '-')
+    return _fix_mixed_layout(result).replace('\u2014', '-')
 
 def channel_write_post(topic, brief_text, ga_verdict):
     """Channel Agent writes a post draft from the brief."""
