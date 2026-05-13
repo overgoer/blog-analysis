@@ -6,7 +6,8 @@ Phases:
   1. GA picks topic from pool
   2. Researcher researches (calls researcher.py)
   3. GA reviews brief, decides if post-worthy
-  4. Channel Agent writes post draft
+  3.5 RAW WRITER extracts dense content layer
+  4. STYLE ADAPTER adapts posts to channel style
   5. Digest emailed to eddy.super1@gmail.com
 
 Usage:
@@ -205,6 +206,67 @@ def ga_review_brief(topic, brief_text):
     )
     return dk(system, user, temperature=0.3, max_tokens=1000)
 
+def raw_write_content(topic, brief_text, ga_verdict):
+    # Phase 3.5: RAW WRITER - dump all useful material without style constraints
+    system = (
+        'You are a RAW WRITER for @eddytester. Your ONLY job: extract every useful '
+        'fact, bug, case, command, and argument from the research brief.'
+        '\n\nRULES:\n'
+        '- Write in RUSSIAN\n'
+        '- Do NOT worry about style, structure, or readability\n'
+        '- Do NOT add intros, conclusions, or transitions\n'
+        '- Just dump the material: technical details, curl commands, HTTP quirks, '
+        'real bugs, edge cases, quotes from sources, data points, specific numbers\n'
+        '- If the brief is thin, say what\'s missing\n'
+        '- If you know more context from training data, add it (date it if possible)\n'
+        '- Length: as long as it needs to be (no limit)\n\n'
+        'Think of this as your notes for the post. Dump everything useful.'
+    )
+    user = (
+        f'Topic: {topic}\n\n'
+        f'GA Verdict (key angle): {ga_verdict[:1000]}\n\n'
+        f'Research brief:\n{brief_text}'
+    )
+    return dk(system, user, temperature=0.6, max_tokens=4096)
+
+
+def style_adapter(topic, raw_content, ga_verdict):
+    # Phase 4: STYLE ADAPTER - adapt raw content to channel style (replaces channel_write_post)
+    best_angle = ''
+    for line in ga_verdict.split('\n'):
+        if line.startswith('BEST_ANGLE') or line.startswith('**BEST_ANGLE'):
+            best_angle = line.split(':', 1)[-1].strip() if ':' in line else line
+            break
+
+    system = (
+        'You are STYLE ADAPTER for @eddytester - a QA testing channel.\n'
+        'Your job: take RAW content and adapt it to the channel\'s voice.'
+        '\n\nCRITICAL RULES:\n'
+        '1. NO template headers. NO Situation/Analysis/Verdict/Takeaway/Realy.\n'
+        '   The post should read as natural connected text, not a form.\n'
+        '2. NO em dashes. Use regular hyphens (-) instead.\n'
+        '3. Short paragraphs. 1-3 sentences each. Lots of whitespace.\n'
+        '4. Natural flow: start with a hook, unpack technically, end with a takeaway.\n'
+        '5. Natural slang: "kejc", "prod", "bag", "zashkvar"\n'
+        '6. No emoji abuse (1-2 max)\n'
+        '7. ~500-800 chars total (can go to 1200 if BEST_ANGLE has many points)\n'
+        '8. Explain key terms INLINE\n'
+        '9. When useful: add 1-2 links at end\n'
+        '10. Write in RUSSIAN\n'
+        '11. NEVER preface the post with any meta-commentary. Start directly.\n'
+        '12. GA verdict provides BEST_ANGLE - this MUST be the core.\n'
+        '13. CRITICAL: NEVER use em dash (\u2014). Always use regular hyphen (-).\n'
+        '14. Replace every em dash with hyphen before output.\n\n'
+        'OUTPUT ONLY THE POST. No meta-text, no explanations.'
+    )
+    user = (
+        f'Topic: {topic}\n\n'
+        f'BEST_ANGLE: {best_angle}\n\n'
+        f'RAW CONTENT (dense material):\n{raw_content}\n\n'
+        f'GA Review:\n{ga_verdict}'
+    )
+    result = dk(system, user, temperature=0.5, max_tokens=2000)
+    return result.replace('\u2014', '-')
 
 def channel_write_post(topic, brief_text, ga_verdict):
     """Channel Agent writes a post draft from the brief."""
@@ -298,10 +360,11 @@ def md_to_html(text):
     return "\n".join(html_parts)
 
 
-def format_email_html(topic, ga_review_result, post_draft, brief_path):
-    """Build HTML email body."""
+def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+    """Build HTML email body with old and new post versions for comparison."""
     ga_html = md_to_html(ga_review_result)
-    post_html = md_to_html(post_draft)
+    post_old_html = md_to_html(post_draft_old)
+    post_new_html = md_to_html(post_draft_new)
 
     return f"""<!DOCTYPE html>
 <html>
@@ -318,7 +381,13 @@ def format_email_html(topic, ga_review_result, post_draft, brief_path):
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 
-{post_html}
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#666;">\u0421\u0422\u0410\u0420\u042b\u0419 \u0424\u041e\u0420\u041c\u0410\u0422 (Channel Agent)</h2>
+{post_old_html}
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#059669;">\u041d\u041e\u0412\u042b\u0419 \u0424\u041e\u0420\u041c\u0410\u0422 (Style Adapter)</h2>
+{post_new_html}
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 
@@ -328,9 +397,10 @@ def format_email_html(topic, ga_review_result, post_draft, brief_path):
 
 <div style="background:#fef3c7;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#92400e;">
   <b>\u041a\u043e\u043c\u0430\u043d\u0434\u044b \u0434\u043b\u044f \u043e\u0442\u0432\u0435\u0442\u0430:</b><br>
-  <b>\u0442\u0433 1</b> \u2014 \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d, \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439<br>
-  <b>\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ...</b> \u2014 \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430<br>
-  <b>\u0432 \u043f\u0443\u043b: ...</b> \u2014 \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443
+  <b>\u0442\u0433 1</b> - \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d, \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439<br>
+  <b>\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ...</b> - \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430<br>
+  <b>\u0432 \u043f\u0443\u043b: ...</b> - \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443<br>
+  <b>\u0431\u044d\u043a\u043b\u043e\u0433 &lt;\u0438\u0434\u0435\u044f&gt;</b> - \u0434\u043e\u0431\u0430\u0432\u044c \u0438\u0434\u0435\u044e \u0432 \u0431\u044d\u043a\u043b\u043e\u0433
 </div>
 
 <div style="text-align:center;font-size:11px;color:#999;margin-top:16px;">
@@ -339,8 +409,8 @@ def format_email_html(topic, ga_review_result, post_draft, brief_path):
 </body></html>"""
 
 
-def format_email_plain(topic, ga_review_result, post_draft, brief_path):
-    """Build plain text fallback."""
+def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+    """Build plain text fallback with both versions."""
     return f"""\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430
 \u0414\u0430\u0442\u0430: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
@@ -349,24 +419,28 @@ def format_email_plain(topic, ga_review_result, post_draft, brief_path):
 -- GA Review --
 {ga_review_result}
 
--- \u041f\u0440\u043e\u0435\u043a\u0442 \u043f\u043e\u0441\u0442\u0430 --
-{post_draft}
+-- \u0421\u0422\u0410\u0420\u042b\u0419 \u0424\u041e\u0420\u041c\u0410\u0422 (Channel Agent) --
+{post_draft_old}
+
+-- \u041d\u041e\u0412\u042b\u0419 \u0424\u041e\u0420\u041c\u0410\u0422 (Style Adapter) --
+{post_draft_new}
 
 -- \u0411\u0440\u0438\u0444 --
 {brief_path.split('/')[-1]}
 
 \u041a\u043e\u043c\u0430\u043d\u0434\u044b:
-  "\u0442\u0433 1" \u2014 \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d
-  "\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ..." \u2014 \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430
-  "\u0432 \u043f\u0443\u043b: ..." \u2014 \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443
+  "\u0442\u0433 1" - \u043f\u043e\u0441\u0442 \u043e\u0434\u043e\u0431\u0440\u0435\u043d
+  "\u0437\u0430\u0448\u043a\u0432\u0430\u0440: ..." - \u0442\u0435\u043c\u0430 \u043d\u0435 \u043d\u0443\u0436\u043d\u0430
+  "\u0432 \u043f\u0443\u043b: ..." - \u0434\u043e\u0431\u0430\u0432\u044c \u0442\u0435\u043c\u0443
+  "\u0431\u044d\u043a\u043b\u043e\u0433 <\u0438\u0434\u0435\u044f>" - \u0434\u043e\u0431\u0430\u0432\u044c \u0438\u0434\u0435\u044e \u0432 \u0431\u044d\u043a\u043b\u043e\u0433
 """
 
 
-def send_email(topic, ga_review_result, post_draft, brief_path):
-    """Send digest email via mailer with HTML formatting."""
+def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+    """Send digest email via mailer with HTML formatting (old + new style)."""
     subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
-    html = format_email_html(topic, ga_review_result, post_draft, brief_path)
-    plain = format_email_plain(topic, ga_review_result, post_draft, brief_path)
+    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path)
+    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path)
 
     try:
         import sys as _sys
@@ -433,9 +507,17 @@ def main():
     ga_verdict = ga_review_brief(topic, brief_text)
     log(f"GA verdict:\n{ga_verdict[:300]}...")
 
-    # Phase 4: Channel Agent writes post
-    log("Phase 4: Channel Agent writing post...")
-    post_draft = channel_write_post(topic, brief_text, ga_verdict)
+    # Phase 3.5: RAW WRITER
+    log("Phase 3.5: RAW WRITER extracting dense content...")
+    raw_content = raw_write_content(topic, brief_text, ga_verdict)
+
+    # Phase 4: STYLE ADAPTER (new pipeline)
+    log("Phase 4: STYLE ADAPTER writing post...")
+    post_draft_new = style_adapter(topic, raw_content, ga_verdict)
+
+    # Phase 4 (old): Channel Agent for comparison
+    log("Phase 4 (old): Channel Agent writing post for comparison...")
+    post_draft_old = channel_write_post(topic, brief_text, ga_verdict)
 
     # Phase 5: Send digest
     log("Phase 5: Sending digest...")
@@ -443,11 +525,12 @@ def main():
     print(f"  TOPIC: {topic}")
     print(f"{'='*60}")
     print(f"\n── GA Review ──\n{ga_verdict}")
-    print(f"\n── Post Draft ──\n{post_draft}")
+    print(f"\n── Post Draft (old style) ──\n{post_draft_old}")
+    print(f"\n── Post Draft (new style) ──\n{post_draft_new}")
     print(f"\n── Brief saved: {brief_path}")
 
     if send_email_flag:
-        send_email(topic, ga_verdict, post_draft, brief_path)
+        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path)
 
     # Mark topic as researched
     data["researched"].append({"topic": topic, "date": datetime.now().strftime("%Y-%m-%d")})

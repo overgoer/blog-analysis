@@ -33,6 +33,7 @@ LOG_FILE = Path("/root/blog-analysis/logs/cmd_processor.log")
 PROCESSED_DIR = BASE / "orchestrator" / "processed_cmds"
 SENT_FOLDER = "[Gmail]/&BB4EQgQ,BEAEMAQyBDsENQQ9BD0ESwQ1-"
 PROCESSED_IDS_FILE = BASE / "orchestrator" / "processed_ids.txt"
+WISHLIST_FILE = BASE / "orchestrator" / "wishlist.json"
 
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(LOG_FILE.parent, exist_ok=True)
@@ -60,6 +61,18 @@ def save_topics(data):
     with open(TOPICS_FILE, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
+
+
+def load_wishlist():
+    if not WISHLIST_FILE.exists():
+        return []
+    with open(WISHLIST_FILE) as f:
+        return json.load(f)
+
+
+def save_wishlist(items):
+    with open(WISHLIST_FILE, "w") as f:
+        json.dump(items, f, indent=2, ensure_ascii=False)
 
 def decode_mime_header(header_value):
     """Decode a MIME encoded header value."""
@@ -155,6 +168,12 @@ def parse_commands(body):
         if len(topic) > 10:
             results.append({"cmd": "\u0432 \u043f\u0443\u043b", "args": topic})
 
+    # "бэклог X" — add idea to wishlist (no colon, just "бэклог <idea>")
+    for m in re.finditer(r"\u0431\u044d\u043a\u043b\u043e\u0433\s+(.+)", body_lower):
+        idea = m.group(1).strip().strip('"').strip("'")
+        if len(idea) > 5:
+            results.append({"cmd": "\u0431\u044d\u043a\u043b\u043e\u0433", "args": idea})
+
     return results
 
 
@@ -203,6 +222,27 @@ def execute_command(result, subject):
             else:
                 log(f"CMD: \u0432 \u043f\u0443\u043b \u2014 \"{topic[:60]}\" \u0443\u0436\u0435 \u0432 \u043f\u0443\u043b\u0435")
                 return {"action": "added_duplicate", "detail": topic}
+
+    elif cmd == "\u0431\u044d\u043a\u043b\u043e\u0433":
+        idea = result["args"]
+        if idea and len(idea) > 5:
+            wishlist = load_wishlist()
+            existing = [x for x in wishlist if x["idea"] == idea]
+            if not existing:
+                entry = {
+                    "idea": idea,
+                    "source": "email",
+                    "status": "new",
+                    "verdict": None,
+                    "added": datetime.now().isoformat()
+                }
+                wishlist.append(entry)
+                save_wishlist(wishlist)
+                log(f"CMD: \u0431\u044d\u043a\u043b\u043e\u0433 \u2014 \"{idea[:60]}\" \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0430 \u0432 wishlist")
+                return {"action": "wishlisted", "detail": idea}
+            else:
+                log(f"CMD: \u0431\u044d\u043a\u043b\u043e\u0433 \u2014 \"{idea[:60]}\" \u0443\u0436\u0435 \u0432 wishlist")
+                return {"action": "wishlisted_duplicate", "detail": idea}
 
     return None
 
