@@ -382,12 +382,28 @@ def md_to_html(text):
     return "\n".join(html_parts)
 
 
-def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
     """Build HTML email body with old and new post versions for comparison."""
     ga_html = md_to_html(ga_review_result)
     post_old_html = md_to_html(post_draft_old)
     post_new_html = md_to_html(post_draft_new)
 
+    # Build wishlist section for email
+    wl_html = ""
+    if wishlist_analyzed:
+        items_html = ""
+        for v in wishlist_analyzed[:5]:
+            vi = v.get("analysis", {})
+            items_html += f"""<div style="background:#f5f3ff;border-radius:8px;padding:10px;margin:6px 0;">
+                <div style="font-size:13px;font-weight:600;">{v["idea"]}</div>
+                <div style="font-size:11px;color:#666;margin-top:4px;">
+                    <b>Verdict:</b> {v.get("verdict","?")} | <b>Usefulness:</b> {vi.get("usefulness","?")}/10 | <b>Complexity:</b> {vi.get("complexity","?")}/10<br>
+                    <b>Stack:</b> {vi.get("stack","?")} | <b>Resources:</b> {vi.get("resources","?")}
+                </div>
+                <div style="font-size:11px;color:#444;margin-top:2px;">{vi.get("reason","")}</div>
+            </div>"""
+        wl_html = f"""<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#7c3aed;">АНАЛИЗ БЭКЛОГА ({len(wishlist_analyzed)})</h2>
+{items_html}"""
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -400,6 +416,8 @@ def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, b
 <h1 style="font-size:18px;font-weight:600;margin:0 0 16px 0;">{topic[:80]}</h1>
 
 {ga_html}
+
+{wl_html}
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 
@@ -431,7 +449,7 @@ def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, b
 </body></html>"""
 
 
-def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
     """Build plain text fallback with both versions."""
     return f"""\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430
 \u0414\u0430\u0442\u0430: {datetime.now().strftime('%Y-%m-%d %H:%M')}
@@ -458,11 +476,11 @@ def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, 
 """
 
 
-def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path):
+def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
     """Send digest email via mailer with HTML formatting (old + new style)."""
     subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
-    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path)
-    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path)
+    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed)
+    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed)
 
     try:
         import sys as _sys
@@ -480,6 +498,84 @@ def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_pa
 
 
 # ── Main ──────────────────────────────────────────────────────────────
+
+
+def analyze_wishlist():
+    """Phase 0.5: Analyze new items in the wishlist. Returns list of dicts."""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(BASE / "orchestrator"))
+        from orchestrator_cmds import load_wishlist, save_wishlist
+    except Exception as e:
+        log("  Could not import wishlist functions: " + str(e))
+        return []
+
+    wishlist = load_wishlist()
+    new_items = [item for item in wishlist if item.get("status") in ("new", None)]
+
+    if not new_items:
+        log("Phase 0.5: No new wishlist items to analyze")
+        return []
+
+    log("Phase 0.5: Analyzing %d new wishlist items..." % len(new_items))
+
+    system = (
+        "You are a WISHLIST ANALYZER for the @eddytester ecosystem.\n"
+        "Analyze each idea and provide structured verdicts.\n\n"
+        "For each idea, evaluate:\n"
+        "- Tech stack: what stack would this need?\n"
+        "- Resources: RAM/CPU/disk impact\n"
+        "- Usefulness (1-10): content value\n"
+        "- Complexity (1-10): implementation difficulty\n"
+        "- Verdict: TAKE / DEFER / SKIP\n"
+        "- Why: one-sentence rationale\n\n"
+        "Respond STRICTLY as JSON array:\n"
+        '[{"idea": "text", "stack": "...", "resources": "...", '
+        '"usefulness": 7, "complexity": 5, '
+        '"verdict": "TAKE", "reason": "..."}]'
+    )
+
+    user_prompt = "Analyze these wishlist items:\n\n"
+    for i, item in enumerate(new_items, 1):
+        user_prompt = user_prompt + str(i) + ". " + item["idea"] + "\n"
+    user_prompt = user_prompt + "\nReturn ONLY valid JSON array."
+
+    result = dk(system, user_prompt, temperature=0.3, max_tokens=2000)
+
+    try:
+        import re as _re
+        json_match = _re.search(r"\[[\s\S]*\]", result, _re.DOTALL)
+        if json_match:
+            analyzed = json.loads(json_match.group())
+        else:
+            analyzed = json.loads(result)
+    except Exception as ex:
+        log("  Could not parse: " + str(ex)[:100])
+        analyzed = []
+
+    for verdict in analyzed:
+        idea_text = verdict.get("idea", "")
+        matched = False
+        for item in wishlist:
+            if item["idea"] == idea_text or idea_text in str(item["idea"]):
+                item["status"] = "analyzed"
+                item["verdict"] = verdict.get("verdict", "SKIP")
+                item["analysis"] = verdict
+                item["analyzed_at"] = datetime.now().isoformat()
+                matched = True
+                break
+        if not matched:
+            for item in wishlist:
+                if item.get("status") in ("new", None):
+                    item["status"] = "analyzed"
+                    item["verdict"] = verdict.get("verdict", "DEFER")
+                    item["analysis"] = verdict
+                    item["analyzed_at"] = datetime.now().isoformat()
+                    break
+
+    save_wishlist(wishlist)
+    log("Phase 0.5: Analyzed %d items" % len(analyzed))
+    return analyzed
 
 def main():
     send_email_flag = "--no-email" not in sys.argv
@@ -504,6 +600,10 @@ def main():
             log(f"Processed {len(cmds_processed)} email commands")
     except Exception as e:
         log(f"  Email check skipped: {e}")
+
+    # Phase 0.5: Analyze wishlist
+    log("Phase 0.5: Analyzing wishlist...")
+    analyzed_wishlist = analyze_wishlist()
 
     # Phase 1: Pick topic
     log("Phase 1: Picking topic...")
@@ -552,7 +652,7 @@ def main():
     print(f"\n── Brief saved: {brief_path}")
 
     if send_email_flag:
-        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path)
+        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path, analyzed_wishlist)
 
     # Mark topic as researched
     data["researched"].append({"topic": topic, "date": datetime.now().strftime("%Y-%m-%d")})
