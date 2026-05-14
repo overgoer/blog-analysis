@@ -26,6 +26,7 @@ import textwrap
 from datetime import datetime
 from pathlib import Path
 from bw_helper import BWVault
+from content_map import ContentMap, tag_post
 
 # ── Paths ──────────────────────────────────────────────────────────────
 BASE = Path("/root/blog-analysis/agents")
@@ -213,6 +214,20 @@ def ga_review_brief(topic, brief_text):
         f"Topic: {topic}\n\n"
         f"Research brief:\n{brief_text[:4000]}"
     )
+
+    # Inject relevant past posts from Content Map
+    try:
+        cm = ContentMap()
+        relevant = cm.find_relevant(topic.split(), top_n=3)
+        if relevant:
+            block = "\n\n## Relevant past posts (for context & cross-references)\n"
+            for r in relevant:
+                angle = f" — {r['angle']}" if r.get("angle") else ""
+                block += f"- {r['title']} ({r['date']}){angle}\n  {r['summary']}\n"
+            user += block
+    except Exception:
+        pass
+
     return dk(system, user, temperature=0.3, max_tokens=1000)
 
 def raw_write_content(topic, brief_text, ga_verdict):
@@ -554,7 +569,34 @@ def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_pa
         (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").write_text(plain)
 
     # Save post to Obsidian vault
-    save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_result)
+    filename = save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_result)
+
+    # Tag post and update Content Map index
+    if filename:
+        try:
+            tag_result = tag_post(topic, post_draft_new, dk)
+            if tag_result:
+                best_angle = ""
+                try:
+                    ga = json.loads(
+                        ga_review_result if isinstance(ga_review_result, str)
+                        else ga_review_result
+                    )
+                    best_angle = ga.get("BEST_ANGLE", "")
+                except Exception:
+                    pass
+                cm = ContentMap()
+                cm.update_index(
+                    date=datetime.now().strftime("%Y-%m-%d"),
+                    title=topic,
+                    angle=best_angle,
+                    tags=tag_result["tags"],
+                    summary=tag_result["summary"],
+                    file_path=str(filename),
+                )
+                log(f"Content Map updated: {len(tag_result['tags'])} tags")
+        except Exception as e:
+            log(f"  Content Map update failed: {e}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────
