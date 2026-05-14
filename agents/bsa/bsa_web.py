@@ -15,7 +15,7 @@ import hashlib, json, os, secrets, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 from http import HTTPStatus
-from flask import Flask, request, jsonify, session, render_template_string
+from flask import Flask, request, jsonify, session, render_template_string, redirect, url_for
 from functools import wraps
 
 # ── Paths ───────────────────────────────────────────────────────────────
@@ -427,7 +427,9 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("authenticated"):
-            return jsonify({"error": "unauthorized"}), 401
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "unauthorized"}), 401
+            return redirect("/login")
         return f(*args, **kwargs)
     return decorated
 
