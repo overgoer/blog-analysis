@@ -32,11 +32,6 @@ LOG_FILE = Path("/root/blog-analysis/logs/bsa_web.log")
 SESSIONS_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__)
-cfg = load_config()
-if "secret_key" not in cfg:
-    cfg["secret_key"] = secrets.token_hex(32)
-    CONFIG.write_text(json.dumps(cfg, indent=2))
-app.secret_key = cfg["secret_key"]
 
 
 # ── Logging ──────────────────────────────────────────────────────────────
@@ -51,6 +46,13 @@ def load_config():
     if CONFIG.exists():
         return json.loads(CONFIG.read_text())
     return {"password_hash": "", "port": 3000, "debug": False}
+
+
+cfg = load_config()
+if "secret_key" not in cfg:
+    cfg["secret_key"] = secrets.token_hex(32)
+    CONFIG.write_text(json.dumps(cfg, indent=2))
+app.secret_key = cfg["secret_key"]
 
 
 def save_config(cfg):
