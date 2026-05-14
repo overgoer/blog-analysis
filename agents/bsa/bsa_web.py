@@ -15,7 +15,7 @@ import hashlib, json, os, secrets, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 from http import HTTPStatus
-from flask import Flask, request, jsonify, session, render_template_string, redirect, url_for
+from flask import Flask, request, jsonify, render_template_string, redirect
 from functools import wraps
 
 # ── Paths ───────────────────────────────────────────────────────────────
@@ -409,34 +409,26 @@ def run_conversation(messages):
     return "Reached iteration limit. Please try a simpler query.", messages
 
 
-# ── Auth ─────────────────────────────────────────────────────────────────
-HTML_LOGIN = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BSA Login</title><style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;display:flex;justify-content:center;align-items:center;min-height:100vh}
-.login{background:#16213e;padding:2rem;border-radius:12px;width:90%;max-width:360px;text-align:center}
-h1{color:#e94560;font-size:1.3rem;margin-bottom:1.5rem}
-input{width:100%;padding:12px;margin-bottom:12px;border:1px solid #333;border-radius:8px;background:#0f3460;color:#fff;font-size:1rem}
-button{width:100%;padding:12px;background:#e94560;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer}
-.error{color:#e94560;font-size:.85rem;margin-bottom:1rem}
-</style></head><body>
-<div class="login">
-<h1>BSA Advisor</h1>
-<form method="post" action="/login">
-<input type="password" name="password" placeholder="Password" autofocus>
-<button type="submit">Enter</button>
-</form></div></body></html>"""
+# ── Auth (token-based, no cookies) ──────────────────────────────────────
+
+def get_auth_token():
+    """Return the persistent auth token, creating one if needed."""
+    cfg = load_config()
+    if "auth_token" not in cfg:
+        cfg["auth_token"] = secrets.token_hex(16)
+        CONFIG.write_text(json.dumps(cfg, indent=2))
+    return cfg["auth_token"]
 
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("authenticated"):
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "unauthorized"}), 401
-            return redirect("/login")
-        return f(*args, **kwargs)
+        token = request.headers.get("X-Auth-Token", "")
+        if token == get_auth_token():
+            return f(*args, **kwargs)
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "unauthorized"}), 401
+        return HTML_LOGIN
     return decorated
 
 
@@ -444,19 +436,19 @@ def login_required(f):
 def login():
     if request.method == "GET":
         return HTML_LOGIN
-    pw = request.form.get("password", "")
+    data = request.get_json(force=True, silent=True) or {}
+    pw = data.get("password") or request.form.get("password", "")
     if check_password(pw):
-        session["authenticated"] = True
-        session.permanent = True
-        return "", 204
-    return HTML_LOGIN.replace('class="login"',
-                              'class="login"><div class="error">Wrong password</div><div class="login"'), 401
+        return jsonify({"token": get_auth_token()})
+    return jsonify({"error": "wrong password"}), 401
 
 
 @app.route("/")
-@login_required
 def index():
-    return render_template_string(HTML_CHAT)
+    token = request.headers.get("X-Auth-Token", "")
+    if token == get_auth_token():
+        return render_template_string(HTML_CHAT)
+    return HTML_LOGIN
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -490,6 +482,16 @@ def chat():
         # Save (keep last 50 messages to avoid bloat)
         trimmed = [updated_conv[0]] + updated_conv[-50:] if len(updated_conv) > 50 else updated_conv
         session_file.write_text(json.dumps(trimmed, ensure_ascii=False))
+        # Update session index with timestamp
+        idx_file = SESSIONS_DIR / "_index.json"
+        if idx_file.exists():
+            try:
+                idx = json.loads(idx_file.read_text())
+                if token in idx:
+                    idx[token]["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    idx_file.write_text(json.dumps(idx, ensure_ascii=False, indent=2))
+            except Exception:
+                pass
         log(f"Chat: {token[:8]} | user({len(user_msg)}) bsa({len(response_text)})")
 
     return jsonify({"response": response_text or "No response"})
@@ -498,11 +500,73 @@ def chat():
 @app.route("/api/new", methods=["POST"])
 @login_required
 def new_session():
+    name = (request.get_json(force=True, silent=True) or {}).get("name", "")
     token = secrets.token_hex(16)
     system_prompt = build_system_prompt()
     conv = [{"role": "system", "content": system_prompt}]
     (SESSIONS_DIR / f"{token}.json").write_text(json.dumps(conv, ensure_ascii=False))
+    # Save to sessions index
+    idx_file = SESSIONS_DIR / "_index.json"
+    if idx_file.exists():
+        idx = json.loads(idx_file.read_text())
+    else:
+        idx = {}
+    idx[token] = {
+        "name": name or token[:8],
+        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    idx_file.write_text(json.dumps(idx, ensure_ascii=False, indent=2))
     return jsonify({"token": token})
+
+
+@app.route("/api/sessions", methods=["GET"])
+@login_required
+def list_sessions():
+    """Return all sessions with name, message count, last updated."""
+    idx_file = SESSIONS_DIR / "_index.json"
+    if idx_file.exists():
+        idx = json.loads(idx_file.read_text())
+    else:
+        idx = {}
+    result = []
+    for token, meta in sorted(idx.items(), key=lambda x: x[1].get("updated", ""), reverse=True):
+        sfile = SESSIONS_DIR / f"{token}.json"
+        msg_count = 0
+        if sfile.exists():
+            try:
+                msgs = json.loads(sfile.read_text())
+                msg_count = len([m for m in msgs if m.get("role") == "user"])
+            except Exception:
+                pass
+        result.append({
+            "token": token,
+            "name": meta.get("name", token[:8]),
+            "created": meta.get("created", ""),
+            "updated": meta.get("updated", ""),
+            "messages": msg_count,
+        })
+    return jsonify({"sessions": result})
+
+
+@app.route("/api/rename", methods=["POST"])
+@login_required
+def rename_session():
+    data = request.get_json(force=True, silent=True) or {}
+    token = data.get("token", "")
+    name = data.get("name", "").strip()
+    if not token or not name:
+        return jsonify({"error": "token and name required"}), 400
+    idx_file = SESSIONS_DIR / "_index.json"
+    if idx_file.exists():
+        idx = json.loads(idx_file.read_text())
+    else:
+        idx = {}
+    if token in idx:
+        idx[token]["name"] = name
+        idx_file.write_text(json.dumps(idx, ensure_ascii=False, indent=2))
+        return jsonify({"ok": True})
+    return jsonify({"error": "session not found"}), 404
 
 
 # ── HTML Chat Template ───────────────────────────────────────────────────
@@ -512,9 +576,20 @@ HTML_CHAT = """<!DOCTYPE html>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
-.header{background:#16213e;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #0f3460}
-.header h1{font-size:1rem;color:#e94560}
-.header button{background:#0f3460;color:#e94560;border:1px solid #e94560;padding:4px 12px;border-radius:6px;font-size:.8rem;cursor:pointer}
+.header{background:#16213e;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #0f3460;gap:8px}
+.header .title{font-size:1rem;color:#e94560;white-space:nowrap}
+.header .session-name{background:#0f3460;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:4px 8px;font-size:.85rem;flex:1;max-width:200px}
+.header .menu-btn{background:#0f3460;color:#e94560;border:1px solid #e94560;padding:4px 10px;border-radius:6px;font-size:.8rem;cursor:pointer;white-space:nowrap}
+#sidebar{display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:100}
+#sidebar .overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5)}
+#sidebar .panel{position:absolute;top:0;right:0;width:80%;max-width:320px;height:100%;background:#1a1a2e;padding:16px;overflow-y:auto;border-left:1px solid #0f3460}
+#sidebar .panel h2{color:#e94560;font-size:1.1rem;margin-bottom:12px}
+.ses-item{padding:10px;border-radius:8px;margin-bottom:6px;cursor:pointer;background:#16213e;display:flex;justify-content:space-between;align-items:center}
+.ses-item.active{border:1px solid #e94560}
+.ses-item .sname{font-size:.9rem;color:#e0e0e0}
+.ses-item .sinfo{font-size:.75rem;color:#666}
+.ses-item .del{color:#e94560;cursor:pointer;font-size:1.2rem;padding:0 4px}
+.sidebar-btn{background:#0f3460;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px;width:100%;margin-bottom:12px;cursor:pointer;font-size:.9rem;text-align:center}
 #chat{flex:1;overflow-y:auto;padding:12px 16px;scroll-behavior:smooth}
 .msg{margin-bottom:12px;max-width:88%;line-height:1.45;font-size:.95rem}
 .msg.user{margin-left:auto;text-align:right}
@@ -534,8 +609,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;
 .loading{text-align:center;color:#666;font-size:.85rem;padding:8px}
 </style></head><body>
 <div class="header">
-<h1>BSA Advisor</h1>
-<button onclick="newSession()">New chat</button>
+<span class="title">BSA</span>
+<input class="session-name" id="sessionName" placeholder="Session name..." onchange="renameSession()">
+<button class="menu-btn" onclick="toggleSidebar()">☰</button>
 </div>
 <div id="chat"></div>
 <div class="loading" id="loading" style="display:none">BSA is thinking...</div>
@@ -543,23 +619,82 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;
 <input id="input" type="text" placeholder="Ask BSA..." autofocus>
 <button id="sendBtn" onclick="send()">Send</button>
 </div>
+
+<div id="sidebar">
+<div class="overlay" onclick="toggleSidebar()"></div>
+<div class="panel">
+<h2>Sessions</h2>
+<button class="sidebar-btn" onclick="newSession()">+ New session</button>
+<div id="sessionList"></div>
+</div>
+</div>
+
 <script>
+const AUTH=()=>localStorage.getItem('bsa_auth');
+const API={headers:{'Content-Type':'application/json','X-Auth-Token':AUTH()}};
 let token = localStorage.getItem('bsa_token');
 let sending = false;
+let sessions = [];
+
 if(!token) newSession();
 else loadHistory();
+
 document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+
+async function api(path,body){
+  const r=await fetch(path,{method:body?'POST':'GET',headers:{...API.headers,'X-Auth-Token':AUTH()},body:body?JSON.stringify(body):undefined});
+  if(r.status===401) window.location.reload();
+  return r.json();
+}
+
 async function newSession(){
-  const r=await fetch('/api/new',{method:'POST'});
-  const d=await r.json();
+  const name=prompt('Session name:','STRATEGY');
+  const d=await api('/api/new',{name:name||''});
   token=d.token;
   localStorage.setItem('bsa_token',token);
   document.getElementById('chat').innerHTML='';
   document.getElementById('input').value='';
+  document.getElementById('sessionName').value=name||'';
   document.getElementById('input').focus();
+  toggleSidebar();
+  refreshSessions();
 }
+
+async function switchSession(t){
+  token=t;
+  localStorage.setItem('bsa_token',token);
+  document.getElementById('chat').innerHTML='';
+  document.getElementById('input').value='';
+  await loadHistory();
+  toggleSidebar();
+}
+
+async function refreshSessions(){
+  const d=await api('/api/sessions');
+  sessions=d.sessions||[];
+  const el=document.getElementById('sessionList');
+  el.innerHTML=sessions.map(s=>
+    '<div class="ses-item'+(s.token===token?' active':'')+'" onclick="switchSession(\''+s.token+'\')">'+
+    '<div><div class="sname">'+s.name+'</div><div class="sinfo">'+s.messages+' msgs</div></div>'+
+    '</div>'
+  ).join('');
+}
+
+function toggleSidebar(){
+  const el=document.getElementById('sidebar');
+  el.style.display=el.style.display==='block'?'none':'block';
+  if(el.style.display==='block') refreshSessions();
+}
+
+async function renameSession(){
+  const name=document.getElementById('sessionName').value;
+  if(name) await api('/api/rename',{token:token,name:name});
+}
+
 async function loadHistory(){
-  // history loaded from storage on each message
+  const saved=localStorage.getItem('bsa_session_name_'+token);
+  document.getElementById('sessionName').value=saved||'';
+  // messages load from server on each send, history from localStorage
 }
 async function send(){
   if(sending) return;
@@ -572,13 +707,7 @@ async function send(){
   document.getElementById('sendBtn').disabled=true;
   document.getElementById('loading').style.display='block';
   try{
-    const r=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,token:token})
-    });
-    if(r.status===401){window.location.reload();return}
-    const d=await r.json();
+    const d=await api('/api/chat',{message:msg,token:token});
     if(d.response) addMessage('bsa',d.response);
   }catch(e){
     addMessage('bsa','Error: connection failed. Try again.');
