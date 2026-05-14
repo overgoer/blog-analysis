@@ -15,7 +15,7 @@ import hashlib, json, os, secrets, subprocess, sys, tempfile
 from datetime import datetime
 from pathlib import Path
 from http import HTTPStatus
-from flask import Flask, request, jsonify, render_template_string, redirect
+from flask import Flask, request, jsonify, render_template_string
 from functools import wraps
 
 # ── Paths ───────────────────────────────────────────────────────────────
@@ -49,10 +49,6 @@ def load_config():
 
 
 cfg = load_config()
-if "secret_key" not in cfg:
-    cfg["secret_key"] = secrets.token_hex(32)
-    CONFIG.write_text(json.dumps(cfg, indent=2))
-app.secret_key = cfg["secret_key"]
 
 
 def save_config(cfg):
@@ -412,7 +408,6 @@ def run_conversation(messages):
 # ── Auth (token-based, no cookies) ──────────────────────────────────────
 
 def get_auth_token():
-    """Return the persistent auth token, creating one if needed."""
     cfg = load_config()
     if "auth_token" not in cfg:
         cfg["auth_token"] = secrets.token_hex(16)
@@ -426,16 +421,12 @@ def login_required(f):
         token = request.headers.get("X-Auth-Token", "")
         if token == get_auth_token():
             return f(*args, **kwargs)
-        if request.path.startswith("/api/"):
-            return jsonify({"error": "unauthorized"}), 401
-        return HTML_LOGIN
+        return jsonify({"error": "unauthorized"}), 401
     return decorated
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["POST"])
 def login():
-    if request.method == "GET":
-        return HTML_LOGIN
     data = request.get_json(force=True, silent=True) or {}
     pw = data.get("password") or request.form.get("password", "")
     if check_password(pw):
@@ -445,10 +436,7 @@ def login():
 
 @app.route("/")
 def index():
-    token = request.headers.get("X-Auth-Token", "")
-    if token == get_auth_token():
-        return render_template_string(HTML_CHAT)
-    return HTML_LOGIN
+    return render_template_string(HTML_CHAT)
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -629,27 +617,60 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1a1a2e;
 </div>
 </div>
 
+<div id="loginScreen" style="display:none;flex-direction:column;justify-content:center;align-items:center;flex:1;background:#1a1a2e;padding:2rem">
+<div style="background:#16213e;padding:2rem;border-radius:12px;width:90%;max-width:360px;text-align:center">
+<h1 style="color:#e94560;font-size:1.3rem;margin-bottom:1.5rem">BSA Advisor</h1>
+<input id="loginPw" type="password" placeholder="Password" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #333;border-radius:8px;background:#0f3460;color:#fff;font-size:1rem;outline:none">
+<button onclick="doLogin()" style="width:100%;padding:12px;background:#e94560;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer">Enter</button>
+<div id="loginErr" style="color:#e94560;font-size:.85rem;margin-top:12px;display:none">Wrong password</div>
+</div>
+</div>
+
 <script>
 const AUTH=()=>localStorage.getItem('bsa_auth');
-const API={headers:{'Content-Type':'application/json','X-Auth-Token':AUTH()}};
-let token = localStorage.getItem('bsa_token');
+
+async function doLogin(){
+  const pw=document.getElementById('loginPw').value;
+  const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(r.ok){const d=await r.json();localStorage.setItem('bsa_auth',d.token);showChat();initChat()}
+  else document.getElementById('loginErr').style.display='block';
+}
+
+function showLogin(){
+  document.getElementById('chat').style.display='none';
+  document.getElementById('input-area').style.display='none';
+  document.getElementById('loading').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('loginPw').focus();
+}
+
+function showChat(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('chat').style.display='block';
+  document.getElementById('input-area').style.display='flex';
+}
+
+document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+
+let token;
 let sending = false;
-let sessions = [];
 
-if(!token) newSession();
-else loadHistory();
-
-document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+function initChat(){
+  token = localStorage.getItem('bsa_token');
+  if(!token) newSession();
+  else loadHistory();
+}
 
 async function api(path,body){
-  const r=await fetch(path,{method:body?'POST':'GET',headers:{...API.headers,'X-Auth-Token':AUTH()},body:body?JSON.stringify(body):undefined});
-  if(r.status===401) window.location.reload();
+  const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Auth-Token':AUTH()},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){localStorage.removeItem('bsa_auth');showLogin();return null}
   return r.json();
 }
 
 async function newSession(){
   const name=prompt('Session name:','STRATEGY');
   const d=await api('/api/new',{name:name||''});
+  if(!d) return;
   token=d.token;
   localStorage.setItem('bsa_token',token);
   document.getElementById('chat').innerHTML='';
@@ -671,7 +692,8 @@ async function switchSession(t){
 
 async function refreshSessions(){
   const d=await api('/api/sessions');
-  sessions=d.sessions||[];
+  if(!d) return;
+  const sessions=d.sessions||[];
   const el=document.getElementById('sessionList');
   el.innerHTML=sessions.map(s=>
     '<div class="ses-item'+(s.token===token?' active':'')+'" onclick="switchSession(\''+s.token+'\')">'+
@@ -694,8 +716,8 @@ async function renameSession(){
 async function loadHistory(){
   const saved=localStorage.getItem('bsa_session_name_'+token);
   document.getElementById('sessionName').value=saved||'';
-  // messages load from server on each send, history from localStorage
 }
+
 async function send(){
   if(sending) return;
   const input=document.getElementById('input');
@@ -706,16 +728,20 @@ async function send(){
   sending=true;
   document.getElementById('sendBtn').disabled=true;
   document.getElementById('loading').style.display='block';
+  document.getElementById('input-area').style.display='none';
   try{
     const d=await api('/api/chat',{message:msg,token:token});
-    if(d.response) addMessage('bsa',d.response);
+    if(d&&d.response) addMessage('bsa',d.response);
   }catch(e){
     addMessage('bsa','Error: connection failed. Try again.');
   }
   sending=false;
   document.getElementById('sendBtn').disabled=false;
   document.getElementById('loading').style.display='none';
+  document.getElementById('input-area').style.display='flex';
+  document.getElementById('input').focus();
 }
+
 function addMessage(role,text){
   const chat=document.getElementById('chat');
   const div=document.createElement('div');
@@ -726,6 +752,7 @@ function addMessage(role,text){
   chat.appendChild(div);
   chat.scrollTop=chat.scrollHeight;
 }
+
 function escapeHtml(text){
   return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/```([\\s\\S]*?)```/g,'<pre><code>$1</code></pre>')
@@ -733,6 +760,9 @@ function escapeHtml(text){
     .replace(/\\*\\*(.+?)\\*\\*/g,'<b>$1</b>')
     .replace(/\\n/g,'<br>');
 }
+
+// Init: check auth, show login or chat
+if(AUTH()){showChat();initChat()}else{showLogin()}
 </script></body></html>"""
 
 
