@@ -247,9 +247,12 @@ def execute_command(result, subject):
                 return {"action": "dev_research", "detail": task_text}
             else:
                 log(f"DEV: CODE — running PM Agent assessment...")
-                assess_task(task_text)
-                log(f"DEV: assessment saved to pm_history.json")
-                return {"action": "dev_assessed", "detail": task_text}
+                assessment = assess_task(task_text)
+                log(f"DEV: assessment saved (verdict={assessment.get('verdict','?')})")
+                if assessment.get("verdict") == "GO":
+                    log(f"DEV: GO verdict — auto-run triggered via pm_agent")
+                    return {"action": "dev_executed", "detail": task_text}
+                return {"action": "dev_assessed", "detail": task_text, "verdict": assessment.get("verdict")}
 
     return None
 

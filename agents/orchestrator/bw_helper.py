@@ -10,11 +10,14 @@ Usage:
 """
 
 import json
+import os
 import subprocess
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 BW_SERVE_URL = "http://127.0.0.1:8087"
+BW_ENV_FILE = Path("/root/.bw_env")
 
 
 class BWVault:
@@ -63,6 +66,18 @@ class BWVault:
         """Get full item dict by name. Returns dict or None."""
         return self.find_item(name)
 
+    @staticmethod
+    def _load_session():
+        """Load BW_SESSION from /root/.bw_env. Returns str or None."""
+        try:
+            if BW_ENV_FILE.exists():
+                for line in BW_ENV_FILE.read_text().splitlines():
+                    if line.startswith("BW_SESSION="):
+                        return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+        return os.environ.get("BW_SESSION")
+
     def add_item(self, name, username=None, password=None, notes=None, uri=None):
         """Add a new login item to the vault.
 
@@ -80,6 +95,11 @@ class BWVault:
         if notes:
             payload["notes"] = notes
 
+        env = os.environ.copy()
+        session = self._load_session()
+        if session:
+            env["BW_SESSION"] = session
+
         try:
             proc = subprocess.run(
                 ["bw", "encode"],
@@ -94,12 +114,26 @@ class BWVault:
                 ["bw", "create", "item"],
                 input=encoded,
                 capture_output=True, text=True, timeout=10,
+                env=env,
             )
             if proc2.returncode != 0:
                 return None
             return json.loads(proc2.stdout)
         except (subprocess.TimeoutExpired, json.JSONDecodeError):
             return None
+
+    def write_credential(self, name, password, username=None, notes=None, uri=None):
+        """High-level: upsert credential. If exists, skip; if not, create.
+
+        Returns dict with 'action' ('created'|'exists') and 'item'.
+        """
+        existing = self.find_item(name)
+        if existing:
+            return {"action": "exists", "item": existing}
+        item = self.add_item(name, username=username, password=password, notes=notes, uri=uri)
+        if item:
+            return {"action": "created", "item": item}
+        return {"action": "error", "detail": "add_item returned None"}
 
 
 if __name__ == "__main__":

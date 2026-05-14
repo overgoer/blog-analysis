@@ -356,6 +356,29 @@ def assess_task(task_text, source="email"):
     save_assessment(assessment)
     print(json.dumps(assessment, indent=2, ensure_ascii=False))
 
+    # Auto-run dev_runner on CODE + GO — только если не хватает информации
+    if source != "email_auto" and assessment.get("verdict") == "GO" and classification == "CODE":
+        try:
+            from dev_runner import run_dev_task
+            repo = assessment.get("next_step", "").split()[0] if assessment.get("next_step") else "v0-test-api"
+            # Extract repo name from next_step if present
+            for known in ["v0-test-api", "free-trial-api", "api-practicum-bot"]:
+                if known in (assessment.get("next_step") or ""):
+                    repo = known
+                    break
+            log(f"  AUTO-RUN: launching dev_runner on {repo}...")
+            dr_result = run_dev_task(repo, task_text)
+            log(f"  AUTO-RUN: branch={dr_result.get('branch','?')}, committed={dr_result.get('commit',{}).get('committed',False)}")
+            assessment["auto_run"] = {
+                "repo": repo,
+                "branch": dr_result.get("branch"),
+                "committed": dr_result.get("commit", {}).get("committed"),
+            }
+        except Exception as e:
+            log(f"  AUTO-RUN failed: {e}")
+
+    return assessment
+
 def print_assessment(assessment):
     """Pretty-print assessment to console."""
     try:

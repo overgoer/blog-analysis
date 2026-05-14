@@ -19,6 +19,11 @@ EDDYTESTER_FILE = os.path.join(DATA_DIR, "eddytester_raw.json")
 OUT_DIR = os.path.join(SCOUT_DIR, "reports")
 RAW_DIR = os.path.join(SCOUT_DIR, "raw")
 
+# Obsidian vault for sync to Mac
+OBSIDIAN_DIR = "/root/obsidian-vault/eddytester"
+SCOUT_OBSIDIAN_DIR = os.path.join(OBSIDIAN_DIR, "Стратегия", "Конкуренты")
+SCOUT_HUB_FILE = os.path.join(OBSIDIAN_DIR, "Стратегия", "SCOUT.md")
+
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(RAW_DIR, exist_ok=True)
 
@@ -439,6 +444,9 @@ def main():
             lf.write(report)
         log("Format suggestions added to report")
 
+    # Write to Obsidian vault for sync to Mac
+    write_obsidian_report(report, gaps, date_str, competitor_results)
+
     # Save summary JSON
     summary = {
         "date": date_str,
@@ -456,6 +464,56 @@ def main():
 
     log("=== SCOUT Agent Complete ===")
     sys.exit(0)
+
+def write_obsidian_report(report, gaps, date_str, competitor_results):
+    """Write SCOUT report to Obsidian vault for sync to Mac."""
+    os.makedirs(SCOUT_OBSIDIAN_DIR, exist_ok=True)
+
+    # Full report as dated page
+    report_file = os.path.join(SCOUT_OBSIDIAN_DIR, f"SCOUT_{date_str}.md")
+    with open(report_file, "w") as f:
+        f.write(report)
+    log(f"Obsidian report: {report_file}")
+
+    # Update hub page: add link to this report, keep key metrics at top
+    top_gaps_text = ""
+    if gaps:
+        top_gaps_text = "\n".join(
+            f"  - **{g['category']}**: gap +{g['gap']}%"
+            for g in gaps[:5]
+        )
+        top_gaps_text = "\n\n#### Текущие разрывы\n" + top_gaps_text
+
+    channels_count = len([v for v in competitor_results.values() if not v.get("error")])
+
+    hub_entry = f"- [{date_str}](Конкуренты/SCOUT_{date_str}.md) — {channels_count} каналов, {len(gaps)} gaps"
+
+    if os.path.exists(SCOUT_HUB_FILE):
+        with open(SCOUT_HUB_FILE) as f:
+            hub_content = f.read()
+        # Add entry after the header
+        lines = hub_content.split("\n")
+        # Find the entry section or append
+        insert_idx = len(lines)
+        for i, line in enumerate(lines):
+            if line.startswith("## Последние отчёты"):
+                insert_idx = i + 1
+                break
+        lines.insert(insert_idx, hub_entry)
+        hub_content = "\n".join(lines)
+    else:
+        hub_content = (
+            f"# SCOUT — Анализ конкурентов\n\n"
+            f"Автоматический мониторинг QA-каналов. Отчёты пишутся при каждом запуске SCOUT.\n"
+            f"Данные используются BSA для стратегических ставок и GA для выбора угла.\n"
+            f"{top_gaps_text}\n\n"
+            f"## Последние отчёты\n"
+            f"{hub_entry}\n"
+        )
+
+    with open(SCOUT_HUB_FILE, "w") as f:
+        f.write(hub_content)
+    log(f"Obsidian hub: {SCOUT_HUB_FILE}")
 
 
 if __name__ == "__main__":
