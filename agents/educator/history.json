@@ -20,7 +20,8 @@
     "HTTP Method Semantics",
     "SQL: INNER JOIN vs LEFT JOIN",
     "Logging & Correlation IDs",
-    "SQL: EXPLAIN Query Plan"
+    "SQL: EXPLAIN Query Plan",
+    "SQL: GROUP BY & Aggregation Gotchas"
   ],
   "last_digest": null
 }

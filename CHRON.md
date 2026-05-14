@@ -288,3 +288,118 @@ CHECKPOINT: Tue May 12 07:00:01 PM UTC 2026
 CHECKPOINT: Tue May 12 07:30:01 PM UTC 2026
 CHECKPOINT: Tue May 12 08:00:01 PM UTC 2026
 CHECKPOINT: Tue May 12 08:30:01 PM UTC 2026
+
+## Session 6b — 2026-05-12 (20:30-21:00)
+
+### Что сделано
+
+1. **HTML email верстка** ✅
+   - md_to_html() конвертер: markdown → HTML с CSS
+   - format_email_html() + format_email_plain()
+   - iPhone-readable: sans-serif, цвета, отступы, hr-разделители
+   - Фолбэк на plain text для почтовых клиентов без HTML
+
+2. **Channel Agent: BEST_ANGLE** ✅
+   - Извлекает BEST_ANGLE из GA verdict
+   - Пишет пост строго по этому углу
+   - Если GA сказал 5 багов — пишет про все 5, не 1
+
+3. **IMAP команды** ✅
+   - orchestrator_cmds.py: Gmail IMAP → парсинг команд из ответов Eddy
+   - Команды: тг 1 (одобрить), зашквар: X (заблокировать), в пул: X (добавить)
+   - Phase 0 в оркестраторе: проверяет почту перед выбором темы
+   - Сохраняет историю команд в processed_cmds/
+
+4. **СТИЛЬ: пояснения терминов** ✅
+   - Правила вариативности: inline, списки терминов, скобки, контекстные определения
+   - Полезные ссылки в конце поста (когда уместно)
+
+5. **Тестовый запуск** ✅
+   - Тема: Postman collections for advanced API testing
+   - GA: MUST POST, BEST_ANGLE про production disaster scenario
+   - Пост: управление окружениями в Postman (pre-request scripts, naming, global vars)
+   - Ссылки: Postman docs + blog
+   - Письмо ушло, HTML отображается корректно
+
+### Статус системы
+- Researcher: Serper.dev + SearXNG fallback, 40 тем в пуле
+- Оркестратор: GA → Researcher → GA Review → Channel Agent → Email
+- IMAP: Gmail IMAP, команды через reply
+- Git: всё закоммичено (researcher: f19617e, blog-analysis: 846ad26)
+- Журнал сессий: /Users/eddy/Documents/Оркестратор/ЖУРНАЛ.md
+
+### Следующий шаг
+Ожидание фидбека от Эда по:
+- Качеству поста про Postman (термины, ссылки, формат)
+- Работе IMAP команд
+- Планам по следующей фазе
+CHECKPOINT: Tue May 12 09:00:01 PM UTC 2026
+CHECKPOINT: Tue May 12 09:30:01 PM UTC 2026
+CHECKPOINT: Tue May 12 10:00:01 PM UTC 2026
+CHECKPOINT: Tue May 12 10:30:01 PM UTC 2026
+CHECKPOINT: Tue May 12 11:00:01 PM UTC 2026
+CHECKPOINT: Tue May 12 11:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 12:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 12:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 01:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 01:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 02:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 02:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 03:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 03:30:02 AM UTC 2026
+CHECKPOINT: Wed May 13 04:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 04:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 05:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 05:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 06:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 06:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 07:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 07:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 08:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 08:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 09:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 09:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 10:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 10:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 11:00:01 AM UTC 2026
+CHECKPOINT: Wed May 13 11:30:01 AM UTC 2026
+CHECKPOINT: Wed May 13 12:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 12:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 01:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 01:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 02:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 02:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 03:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 03:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 04:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 04:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 05:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 05:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 06:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 06:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 07:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 07:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 08:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 08:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 09:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 09:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 10:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 10:30:01 PM UTC 2026
+CHECKPOINT: Wed May 13 11:00:01 PM UTC 2026
+CHECKPOINT: Wed May 13 11:30:01 PM UTC 2026
+CHECKPOINT: Thu May 14 12:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 12:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 01:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 01:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 02:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 02:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 03:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 03:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 04:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 04:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 05:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 05:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 06:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 06:30:01 AM UTC 2026
+CHECKPOINT: Thu May 14 07:00:01 AM UTC 2026
+CHECKPOINT: Thu May 14 07:30:01 AM UTC 2026

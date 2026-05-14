@@ -1,1 +1,38 @@
-[]
+[
+  {
+    "idea": "tgstat — self-hosted TG channel analytics dashboard (Grafana + VictoriaMetrics via Docker)",
+    "source": "research",
+    "status": "new",
+    "added": "2026-05-13"
+  },
+  {
+    "idea": "thestats_bot — open-source Telegram bot for channel statistics",
+    "source": "research",
+    "status": "new",
+    "added": "2026-05-13"
+  },
+  {
+    "idea": "telegram-watch — self-hosted tool for monitoring Telegram channels and groups",
+    "source": "research",
+    "status": "new",
+    "added": "2026-05-13"
+  },
+  {
+    "idea": "teledigest — automated daily digests from Telegram channels",
+    "source": "research",
+    "status": "new",
+    "added": "2026-05-13"
+  },
+  {
+    "idea": "Multilingual content expansion — use DeepSeek to rewrite posts in English/Russian with cultural adaptation",
+    "source": "orchestrator",
+    "status": "new",
+    "added": "2026-05-13"
+  },
+  {
+    "idea": "Competitor content analysis pipeline — track top QA/testing Telegram channels for content ideas",
+    "source": "orchestrator",
+    "status": "new",
+    "added": "2026-05-13"
+  }
+]
