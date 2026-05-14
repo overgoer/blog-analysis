@@ -488,9 +488,47 @@ def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, 
 """
 
 
+OBSIDIAN_POSTS_DIR = Path("/root/obsidian-vault/eddytester/Посты")
+
+
+def save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_result):
+    """Save post drafts to Obsidian vault for quick access and publication."""
+    try:
+        OBSIDIAN_POSTS_DIR.mkdir(parents=True, exist_ok=True)
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        safe_topic = "".join(c if c.isalnum() or c in " _-" else "_" for c in topic[:60])
+        filename = OBSIDIAN_POSTS_DIR / f"{date_str}_{safe_topic}.md"
+
+        best_angle = ""
+        try:
+            ga = json.loads(ga_review_result) if isinstance(ga_review_result, str) else ga_review_result
+            best_angle = ga.get("BEST_ANGLE", "")
+        except Exception:
+            pass
+
+        content = (
+            f"# {topic}\n"
+            f"**Date:** {date_str}\n"
+            f"**Angle:** {best_angle}\n"
+            f"**Status:** черновик\n"
+            f"\n---\n"
+            f"## Новая версия\n"
+            f"{post_draft_new}\n"
+            f"\n---\n"
+            f"## Старая версия\n"
+            f"{post_draft_old}\n"
+        )
+        filename.write_text(content)
+        log(f"Post saved to Obsidian: {filename}")
+        return filename
+    except Exception as e:
+        log(f"  Obsidian save failed: {e}")
+        return None
+
+
 def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None):
     """Send digest email via mailer with HTML formatting (old + new style)."""
-    subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
+    subject = f"Дайджест Оркестратора: {topic[:50]}"
     html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
     plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
 
@@ -507,6 +545,9 @@ def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_pa
         os.makedirs(archive, exist_ok=True)
         (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html").write_text(html)
         (archive / f"digest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").write_text(plain)
+
+    # Save post to Obsidian vault
+    save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_result)
 
 
 # ── Main ──────────────────────────────────────────────────────────────
