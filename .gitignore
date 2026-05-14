@@ -1,5 +1,13 @@
 __pycache__
 *.pyc
+# Runtime state files
+CHRON.md
+bsa_thread.json
+wishlist.json
+processed_cmds/
+processed_ids.txt
+# Researcher is a standalone git repo, not a submodule
+agents/researcher/
 .env
 .mailcfg
 *.log
