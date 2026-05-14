@@ -213,6 +213,10 @@ def build_audit_prompt(pm_ctx, wishlist, pm_history, topics, git_logs):
     lines.append("- The audience is juniors doing manual backend testing. Content must serve them.")
     lines.append("- Eddy runs everything solo. Time is the scarcest resource.")
     lines.append("")
+    lines.append("## Language")
+    lines.append("- Output ALL text in Russian, except for proper names and technical terms (e.g. API, Stripe, YooKassa).")
+    lines.append("- Strategic Bet titles can mix Russian and English for clarity, but rationale and impact must be in Russian.")
+    lines.append("")
 
     mission = pm_ctx.get("mission", {})
     lines.append(f"## Mission")
@@ -276,13 +280,13 @@ def build_audit_prompt(pm_ctx, wishlist, pm_history, topics, git_logs):
 
     # ── User prompt ──
     user_lines = []
-    user_lines.append("Perform a weekly strategic audit of the @eddytester ecosystem.")
+    user_lines.append("Выполни еженедельный стратегический аудит экосистемы @eddytester.")
     user_lines.append("")
-    user_lines.append("Analyze the current state, recent git activity, wishlist items, and past PM Agent verdicts.")
+    user_lines.append("Проанализируй текущее состояние, активность в git, элементы wishlist и прошлые вердикты PM Agent.")
     user_lines.append("")
 
     if isinstance(wishlist, list) and wishlist:
-        user_lines.append("## Wishlist Items (pending ideas)")
+        user_lines.append("## Wishlist (ожидающие идеи)")
         for item in wishlist[:20]:
             idea = item.get("idea", "")
             verdict = item.get("verdict", "new")
@@ -292,7 +296,7 @@ def build_audit_prompt(pm_ctx, wishlist, pm_history, topics, git_logs):
 
     if isinstance(pm_history, list) and pm_history:
         recent = pm_history[-10:]
-        user_lines.append("## Recent PM Agent Verdicts (last 10)")
+        user_lines.append("## Последние вердикты PM Agent (последние 10)")
         for entry in recent:
             task = entry.get("task", "?")
             verdict = entry.get("verdict", "?")
@@ -300,26 +304,26 @@ def build_audit_prompt(pm_ctx, wishlist, pm_history, topics, git_logs):
             user_lines.append(f"  - {date}: {verdict} — {task[:80]}")
         user_lines.append("")
 
-    user_lines.append("## Output Format (respond with JSON ONLY)")
+    user_lines.append("## Формат ответа (только JSON, без markdown-обёртки)")
     user_lines.append("""{
   "state_of_business": {
-    "summary": "2-3 sentences on overall health",
-    "done": ["what was accomplished in the last week", "..."],
-    "gaps": ["critical gaps", "..."],
-    "risks": ["what could go wrong", "..."],
-    "metrics": "key metrics snapshot"
+    "summary": "2-3 предложения об общем состоянии",
+    "done": ["что сделано за неделю", "..."],
+    "gaps": ["критические пробелы", "..."],
+    "risks": ["что может пойти не так", "..."],
+    "metrics": "ключевые метрики"
   },
   "strategic_bets": [
     {
-      "title": "Short action-oriented title",
-      "rationale": "Why this matters now (2-3 sentences)",
-      "expected_impact": "What changes as a result",
-      "effort_estimate": "L | M | H (hours/days)",
+      "title": "Короткий заголовок действия",
+      "rationale": "Почему это важно сейчас (2-3 предложения)",
+      "expected_impact": "Что изменится в результате",
+      "effort_estimate": "L | M | H (часы/дни)",
       "category": "content | product | operations | growth",
-      "success_criteria": "How we know it worked"
+      "success_criteria": "Как поймём, что сработало"
     }
   ],
-  "recommendations": ["quick wins", "deferred items"]
+  "recommendations": ["быстрые победы", "отложенные задачи"]
 }""")
 
     return system_prompt, "\n".join(user_lines)
@@ -553,6 +557,8 @@ def build_feedback_prompt(current_bets, feedback_text, pm_ctx):
     lines = []
     lines.append("You are BSA (Business Strategy Agent) analyzing feedback on your strategic bets.")
     lines.append("")
+    lines.append("ВАЖНО: Все тексты (feedback_analysis, rationale, expected_impact, message) — на русском языке.")
+    lines.append("")
     lines.append("## Current Strategic Bets")
     lines.append(bets_text)
     lines.append("")
@@ -568,7 +574,7 @@ def build_feedback_prompt(current_bets, feedback_text, pm_ctx):
     lines.append("""{
   "consensus": false,
   "consensus_signal": null,
-  "feedback_analysis": "Brief summary of what the user wants",
+  "feedback_analysis": "Краткое описание того, что хочет пользователь (на русском)",
   "strategic_bets": [
     {
       "title": "...",

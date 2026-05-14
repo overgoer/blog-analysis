@@ -258,8 +258,8 @@ BSA_AGENT = BASE / "bsa" / "bsa_agent.py"
 
 
 def route_bsa_email(subject, body, message_id, in_reply_to=""):
-    """Route a [BSA] email reply to BSA Agent for feedback processing."""
-    if "[BSA]" not in subject:
+    """Route a BSA email reply to BSA Agent for feedback processing."""
+    if "bsa" not in subject.lower():
         return False
 
     log(f"BSA: routing feedback (msg_id={message_id[:30]})")
