@@ -1,0 +1,250 @@
+{
+  "version": "1.0",
+  "description": "Бизнес-контекст для PM Agent — оценка входящих dev: задач",
+
+  "creator": {
+    "name": "Eddy (Эд)",
+    "role": "QA-инженер, автор канала @eddytester",
+    "email": "eddy.super1@gmail.com",
+    "skills": "Ручное тестирование бэкенда, API, контент, подкасты"
+  },
+
+  "mission": {
+    "tagline": "Помогать джунам тестировать бэкенд уверенно",
+    "how": "Через реальную практику и техническую базу, которой не хватает в книгах",
+    "not_about": ["автоматизация", "пустые новости", "обзоры без мяса"]
+  },
+
+  "products": [
+    {
+      "name": "@eddytester (Telegram)",
+      "type": "content_channel",
+      "subscribers": 1500,
+      "niche": "Ручное тестирование бэкенда",
+      "audience": ["джуны", "стажеры", "миддлы"],
+      "post_format": "Ситуация → анализ → вердикт → вывод + реалы",
+      "post_frequency": "2-3 раза в неделю",
+      "priorities": [
+        "API тестирование — ключевое УТП",
+        "Ручное тестирование — сильная база",
+        "Карьера — сильная категория",
+        "Подкаст iТёрка — УТП, 12 выпусков"
+      ],
+      "gaps": [
+        "POST/PUT/DELETE методы",
+        "GraphQL, gRPC тестирование",
+        "Auth-тестирование (JWT, OAuth, session)",
+        "Docker, Git, Charles, Swagger",
+        "Интеграционное тестирование"
+      ]
+    },
+    {
+      "name": "API Practicum",
+      "type": "product",
+      "description": "REST API-симулятор для обучения. v1 с багами, v2 без.",
+      "stack": "Node.js, Express, PostgreSQL",
+      "host": "85.193.81.51:8080",
+      "status": "запущен, требует развития",
+      "priority": "высокий — основной продукт",
+      "repos": ["v0-test-api", "free-trial-api", "api-practicum-bot"],
+      "funnel": "TG/Insta/YouTube → TG-бот/лендинг → покупка → API-ключи+видео → обучение+чат",
+      "funnel_status": "не достроена — нет лендинга, нет платёжной интеграции"
+    },
+    {
+      "name": "Подкаст iТёрка",
+      "type": "content",
+      "episodes": 12,
+      "priority": "средний",
+      "need": "системный анонс и закрепленный список выпусков"
+    },
+    {
+      "name": "Консультации",
+      "type": "service",
+      "priority": "низкий"
+    }
+  ],
+
+  "servers": [
+    {
+      "name": "eddymnezia (основной)",
+      "ip": "217.144.185.210",
+      "os": "Ubuntu 24.04",
+      "cpu": "unknown",
+      "ram": "~8GB",
+      "disk": "~120GB (25% used)",
+      "services": {
+        "docker": ["searxng", "searxng-redis", "excalidraw", "beszel-agent", "beszel-hub", "amnezia-awg2"],
+        "systemd": ["bw-serve", "cron", "docker", "fail2ban", "mtg-proxy", "openclaw", "shadowsocks", "research-bot", "reports-server"],
+        "cron": ["content_manager", "nightly-imap-check", "researcher", "carousel-bot", "clean_logs", "vpn-healer", "vpn-monitor", "check_ip"]
+      },
+      "stack": {
+        "llm": "DeepSeek V4 Flash ($0.14/1M in, $0.28/1M out)",
+        "search": "Serper.dev + SearXNG fallback",
+        "vault": "Bitwarden CLI (bw serve :8087)",
+        "git": "GitHub (overgoer)",
+        "tg_api": "tdl v0.20.2",
+        "email": "Resend API + SMTP fallback",
+        "vpn": "AmneziaWG + Shadowsocks"
+      }
+    },
+    {
+      "name": "second-server",
+      "ip": "85.193.81.51",
+      "os": "unknown",
+      "services": {
+        "api_practicum": "v0-test-api (port 8080)"
+      },
+      "status": "connection refused — возможно выключен или смена IP"
+    }
+  ],
+
+  "repositories": [
+    {
+      "name": "v0-test-api",
+      "url": "github.com/overgoer/v0-test-api",
+      "path": "/root/v0-test-api",
+      "description": "API для тестирования. v1 с 23 BUG-аннотациями, v2 исправления",
+      "stack": "Node.js, Express",
+      "branch": "main",
+      "status": "активен",
+      "notes": "Не путать traps (учебные баги) и issues (реальные задачи по развитию)"
+    },
+    {
+      "name": "free-trial-api",
+      "url": "github.com/overgoer/free-trial-api",
+      "path": "/root/free-trial-api",
+      "description": "Бесплатная версия API для контента и демо",
+      "stack": "Node.js, Express",
+      "branch": "master",
+      "status": "активен, есть README + gitignore"
+    },
+    {
+      "name": "api-practicum-bot",
+      "url": "github.com/overgoer/api-practicum-bot",
+      "path": "/root/api-practicum-bot",
+      "description": "Telegram бот для воронки продаж практикума",
+      "stack": "aiogram 3.x, SQLite",
+      "branch": "main",
+      "status": "активен, есть README",
+      "issues": ["hardcoded token в main.py:25", "DB_PATH/DB_NAME inconsistency"]
+    },
+    {
+      "name": "blog-analysis",
+      "url": "github.com/overgoer/blog-analysis",
+      "path": "/root/blog-analysis",
+      "description": "Оркестратор, агенты, контент-пайплайн",
+      "stack": "Python, DeepSeek API",
+      "branch": "main",
+      "status": "активен, основа экосистемы"
+    }
+  ],
+
+  "agents": [
+    {
+      "name": "Orchestrator",
+      "role": "Основной пайплайн контента. IMAP → тема → ресёрч → GA → WRITER → email",
+      "schedule": "каждые 2 дня в 11:30 MSK"
+    },
+    {
+      "name": "Nightly IMAP Check",
+      "role": "Проверка почты раз в сутки, обработка команд",
+      "schedule": "каждый день в 1:30 MSK"
+    },
+    {
+      "name": "Researcher",
+      "role": "Поиск и сбор фактов по теме через SearXNG + Serper",
+      "schedule": "каждые 2 дня"
+    },
+    {
+      "name": "General Analyst (GA)",
+      "role": "Стратегический мозг. Выбор темы, вердикт, ревью",
+      "prompt": "ga_prompt.txt"
+    },
+    {
+      "name": "dev_runner",
+      "role": "Запуск DeepSeek-TUI в репозиториях. Ветка → код → коммит → diff",
+      "repos": ["v0-test-api", "free-trial-api", "api-practicum-bot"]
+    },
+    {
+      "name": "PM Agent",
+      "role": "Валидатор входящих dev: задач. Оценка по бизнес-целям",
+      "status": "проектируется"
+    }
+  ],
+
+  "decision_criteria": [
+    {
+      "id": "content_value",
+      "question": "Поможет ли это создавать больше/лучше контента для @eddytester?",
+      "weight": "high",
+      "examples": {
+        "yes": "инструмент генерации идей постов, анализатор трендов, визуализация для постов",
+        "no": "ещё один LLM, общий дашборд метрик"
+      }
+    },
+    {
+      "id": "product_value",
+      "question": "Улучшит ли это API Practicum или воронку продаж?",
+      "weight": "high",
+      "examples": {
+        "yes": "платёжный шлюз, TG-bot upgrade, лендинг, админка",
+        "no": "переписывание на другой язык, рефакторинг без профита для пользователя"
+      }
+    },
+    {
+      "id": "audience_growth",
+      "question": "Поможет ли это привлечь/удержать аудиторию (джунов-тестировщиков)?",
+      "weight": "medium",
+      "examples": {
+        "yes": "SEO-инструменты, кросс-постинг, аналитика аудитории",
+        "no": "инструменты для сеньоров, enterprise-решения"
+      }
+    },
+    {
+      "id": "operational_efficiency",
+      "question": "Упростит ли это рутину — разработку, деплой, управление?",
+      "weight": "medium",
+      "examples": {
+        "yes": "автоматизация деплоя, CI/CD, мониторинг одного окна",
+        "no": "ещё одна панель управления, инструмент с крутым learning curve без явного профита"
+      }
+    },
+    {
+      "id": "cost_vs_value",
+      "question": "Оправданы ли затраты (сервер, токены, время настройки) результатом?",
+      "weight": "high",
+      "notes": "Бюджет ограничен. Бесплатные/дешёвые опции предпочтительнее. Если инструмент стоит денег — профит должен быть очевиден."
+    },
+    {
+      "id": "stack_fit",
+      "question": "Вписывается ли в текущий стек (Python, Node.js, DeepSeek, Linux)?",
+      "weight": "medium",
+      "examples": {
+        "yes": "Python-библиотека, shell-скрипт, npm-пакет",
+        "no": "требует Java/Scala/.NET рантайма, проприетарная система"
+      }
+    },
+    {
+      "id": "maintenance_burden",
+      "question": "Сколько времени займёт поддержка? Эд один — администрирование не должно отнимать время от контента.",
+      "weight": "medium"
+    }
+  ],
+
+  "rejection_examples": [
+    "Установка тяжёлой СУБД без явной необходимости",
+    "Инструмент для автоматизации, который не связан с контентом или продуктом",
+    "Ещё один AI-агент, дублирующий существующие",
+    "Сложная инфраструктура ради 1% прироста"
+  ],
+
+  "response_format": {
+    "verdict": "GO | NO_GO | NEED_MORE_INFO",
+    "reasoning": "2-3 предложения — почему это решает (или не решает) бизнес-задачи",
+    "research_summary": "Коротко: что это, альтернативы, опыт использования, стоимость",
+    "fit_analysis": "По каждому критерию decision_criteria — зелёный/жёлтый/красный",
+    "next_step": "Если GO — предложение: в какой репозиторий, какие первые шаги. Если NO_GO — что могло бы сделать идею приемлемой."
+  },
+
+  "last_updated": "2026-05-14"
+}

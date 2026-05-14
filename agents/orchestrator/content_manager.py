@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Orchestrator — PraisonAI-powered multi-agent system for @eddytester content.
+Content Manager — content pipeline for @eddytester.
 
 Phases:
   1. GA picks topic from pool
@@ -11,10 +11,10 @@ Phases:
   5. Digest emailed to eddy.super1@gmail.com
 
 Usage:
-  python3 orchestrator.py                          # pick topic, research, digest
-  python3 orchestrator.py --topic "..."             # force specific topic
-  python3 orchestrator.py --email                   # send email (default: console)
-  python3 orchestrator.py --no-email                # console only
+  python3 content_manager.py                          # pick topic, research, digest
+  python3 content_manager.py --topic "..."             # force specific topic
+  python3 content_manager.py --email                   # send email (default: console)
+  python3 content_manager.py --no-email                # console only
 """
 
 import json
@@ -25,16 +25,18 @@ import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
+from bw_helper import BWVault
 
 # ── Paths ──────────────────────────────────────────────────────────────
 BASE = Path("/root/blog-analysis/agents")
 RESEARCHER_DIR = BASE / "researcher"
-ORCHESTRATOR_DIR = BASE / "orchestrator"
+CONTENT_DIR = BASE / "orchestrator"
 TOPICS_FILE = RESEARCHER_DIR / "topics.json"
 VENV_PYTHON = BASE / ".venv" / "bin" / "python3"
 MAILER = BASE.parent / "lib" / "mailer.py"
-GA_PROMPT_FILE = ORCHESTRATOR_DIR / "ga_prompt.txt"
-LOG_FILE = Path("/root/blog-analysis/logs/orchestrator.log")
+GA_PROMPT_FILE = CONTENT_DIR / "ga_prompt.txt"
+LAST_DIGEST_FILE = CONTENT_DIR / "last_digest_date.txt"
+LOG_FILE = Path("/root/blog-analysis/logs/content_manager.log")
 
 os.makedirs(LOG_FILE.parent, exist_ok=True)
 
@@ -245,7 +247,7 @@ def _fix_mixed_layout(text):
     })
     result = []
     for line in text.split(chr(10)):
-        has_cyrillic = any(chr(1072) <= ord(c) <= chr(1103) or chr(1040) <= ord(c) <= chr(1071) for c in line)
+        has_cyrillic = any(1072 <= ord(c) <= 1103 or 1040 <= ord(c) <= 1071 for c in line)
         if has_cyrillic:
             result.append(line.translate(trans))
         else:
@@ -382,13 +384,23 @@ def md_to_html(text):
     return "\n".join(html_parts)
 
 
-def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
+def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None):
     """Build HTML email body with old and new post versions for comparison."""
     ga_html = md_to_html(ga_review_result)
     post_old_html = md_to_html(post_draft_old)
     post_new_html = md_to_html(post_draft_new)
 
-    # Build wishlist section for email
+    # Build new commands section for email
+    nc_html = ""
+    if new_commands:
+        nc_items = ""
+        for cmd in new_commands:
+            nc_items += '<div style="padding:3px 0;font-size:13px;">&#8226; ' + cmd["condensed"] + '</div>'
+        nc_html = """\n<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#1e40af;">НОВЫЕ ЗАДАЧИ В БЭКЛОГЕ</h2>
+<div style="background:#eef2ff;border-radius:8px;padding:12px;font-size:13px;color:#1e40af;">""" + nc_items + '</div>\n'
+
+# Build wishlist section for email
     wl_html = ""
     if wishlist_analyzed:
         items_html = ""
@@ -417,7 +429,7 @@ def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, b
 
 {ga_html}
 
-{wl_html}
+{nc_html}{wl_html}
 
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
 
@@ -449,7 +461,7 @@ def format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, b
 </body></html>"""
 
 
-def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
+def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None):
     """Build plain text fallback with both versions."""
     return f"""\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430
 \u0414\u0430\u0442\u0430: {datetime.now().strftime('%Y-%m-%d %H:%M')}
@@ -476,11 +488,11 @@ def format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, 
 """
 
 
-def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None):
+def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None):
     """Send digest email via mailer with HTML formatting (old + new style)."""
     subject = f"\u0414\u0430\u0439\u0434\u0436\u0435\u0441\u0442 \u041e\u0440\u043a\u0435\u0441\u0442\u0440\u0430\u0442\u043e\u0440\u0430: {topic[:50]}"
-    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed)
-    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed)
+    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
+    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
 
     try:
         import sys as _sys
@@ -505,7 +517,7 @@ def analyze_wishlist():
     try:
         import sys as _sys
         _sys.path.insert(0, str(BASE / "orchestrator"))
-        from orchestrator_cmds import load_wishlist, save_wishlist
+        from gateway import load_wishlist, save_wishlist
     except Exception as e:
         log("  Could not import wishlist functions: " + str(e))
         return []
@@ -577,6 +589,33 @@ def analyze_wishlist():
     log("Phase 0.5: Analyzed %d items" % len(analyzed))
     return analyzed
 
+
+def get_new_commands():
+    """Return new wishlist items since last digest, condensed."""
+    wl_file = CONTENT_DIR / "wishlist.json"
+    if not wl_file.exists():
+        return []
+    with open(wl_file) as f:
+        items = json.load(f)
+    last_date = None
+    if LAST_DIGEST_FILE.exists():
+        last_date = LAST_DIGEST_FILE.read_text().strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+    new_items = []
+    for item in items:
+        added = item.get("added", "")
+        if not added:
+            continue
+        if last_date and added <= last_date:
+            continue
+        idea = item.get("idea", "")
+        condensed = idea.strip().rstrip(".,!?;")
+        if len(condensed) > 80:
+            condensed = condensed[:77] + "..."
+        new_items.append({"condensed": condensed})
+    LAST_DIGEST_FILE.write_text(today)
+    return new_items
+
 def main():
     send_email_flag = "--no-email" not in sys.argv
     force_topic = None
@@ -587,14 +626,14 @@ def main():
             force_topic = sys.argv[idx + 1]
 
     log("=" * 50)
-    log("ORCHESTRATOR START")
+    log("CONTENT MANAGER START")
     log("=" * 50)
 
     # Phase 0: Check email commands
     log("Phase 0: Checking email commands...")
     try:
         sys.path.insert(0, str(BASE / "orchestrator"))
-        from orchestrator_cmds import check_mail
+        from gateway import check_mail
         cmds_processed = check_mail()
         if cmds_processed:
             log(f"Processed {len(cmds_processed)} email commands")
@@ -652,7 +691,8 @@ def main():
     print(f"\n── Brief saved: {brief_path}")
 
     if send_email_flag:
-        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path, analyzed_wishlist)
+        new_cmds = get_new_commands()
+        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path, analyzed_wishlist, new_cmds)
 
     # Mark topic as researched
     data["researched"].append({"topic": topic, "date": datetime.now().strftime("%Y-%m-%d")})
@@ -660,7 +700,7 @@ def main():
     log(f"Topic '{topic[:50]}...' marked as researched")
 
     log("=" * 50)
-    log("ORCHESTRATOR COMPLETE")
+    log("CONTENT MANAGER COMPLETE")
     log("=" * 50)
 
 

@@ -2,37 +2,120 @@
   {
     "idea": "tgstat — self-hosted TG channel analytics dashboard (Grafana + VictoriaMetrics via Docker)",
     "source": "research",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "tgstat — self-hosted TG channel analytics dashboard (Grafana + VictoriaMetrics via Docker)",
+      "stack": "Docker, Grafana, VictoriaMetrics, Python/Go scraper",
+      "resources": "Moderate RAM/CPU/disk for time-series DB",
+      "usefulness": 8,
+      "complexity": 6,
+      "verdict": "TAKE",
+      "reason": "Self-hosted analytics provide deep insights into channel growth and engagement."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444583"
   },
   {
     "idea": "thestats_bot — open-source Telegram bot for channel statistics",
     "source": "research",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "thestats_bot — open-source Telegram bot for channel statistics",
+      "stack": "Python, python-telegram-bot, PostgreSQL or SQLite",
+      "resources": "Low to moderate (bot + DB)",
+      "usefulness": 7,
+      "complexity": 5,
+      "verdict": "TAKE",
+      "reason": "A dedicated stats bot offers convenient in-chat metrics for admins."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444597"
   },
   {
     "idea": "telegram-watch — self-hosted tool for monitoring Telegram channels and groups",
     "source": "research",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "telegram-watch — self-hosted tool for monitoring Telegram channels and groups",
+      "stack": "Python, Telethon, Redis (optional)",
+      "resources": "Moderate (polling multiple channels, rate limiting)",
+      "usefulness": 7,
+      "complexity": 6,
+      "verdict": "TAKE",
+      "reason": "Monitoring tool complements analytics by tracking real-time activity and user behavior."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444599"
   },
   {
     "idea": "teledigest — automated daily digests from Telegram channels",
     "source": "research",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "teledigest — automated daily digests from Telegram channels",
+      "stack": "Python, Telethon, APScheduler, MongoDB or SQL",
+      "resources": "Low to moderate (daily aggregation)",
+      "usefulness": 8,
+      "complexity": 5,
+      "verdict": "TAKE",
+      "reason": "Daily digests save time and provide curated content summaries for followers."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444601"
   },
   {
     "idea": "Multilingual content expansion — use DeepSeek to rewrite posts in English/Russian with cultural adaptation",
     "source": "orchestrator",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "Multilingual content expansion — use DeepSeek to rewrite posts in English/Russian with cultural adaptation",
+      "stack": "DeepSeek API or self-hosted LLM, Python, prompt engineering, orchestration",
+      "resources": "Moderate to high (API cost or GPU if local)",
+      "usefulness": 9,
+      "complexity": 8,
+      "verdict": "TAKE",
+      "reason": "High impact for audience expansion; careful prompt design needed for cultural nuance."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444603"
   },
   {
     "idea": "Competitor content analysis pipeline — track top QA/testing Telegram channels for content ideas",
     "source": "orchestrator",
-    "status": "new",
-    "added": "2026-05-13"
+    "status": "analyzed",
+    "added": "2026-05-13",
+    "verdict": "TAKE",
+    "analysis": {
+      "idea": "Competitor content analysis pipeline — track top QA/testing Telegram channels for content ideas",
+      "stack": "Python, Telethon, NLP (topic modeling, deduplication), storage (MongoDB/PostgreSQL)",
+      "resources": "Moderate (data collection and processing)",
+      "usefulness": 8,
+      "complexity": 7,
+      "verdict": "TAKE",
+      "reason": "Provides data-driven insights for content strategy and gap identification."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444615"
+  },
+  {
+    "idea": "прикрутить к общему пайплайну контента карусели для инстаграм.",
+    "source": "email",
+    "status": "analyzed",
+    "verdict": "TAKE",
+    "added": "2026-05-14T09:16:56.632473",
+    "analysis": {
+      "idea": "прикрутить к общему пайплайну контента карусели для инстаграм.",
+      "stack": "Python (instagrapi), media processing (Pillow, moviepy), pipeline integration",
+      "resources": "Moderate (media generation, API rate limits)",
+      "usefulness": 7,
+      "complexity": 7,
+      "verdict": "TAKE",
+      "reason": "Extends content pipeline to Instagram carousels, enabling cross‑platform repurposing."
+    },
+    "analyzed_at": "2026-05-14T10:37:50.444618"
   }
 ]

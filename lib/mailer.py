@@ -62,14 +62,14 @@ def load_config(path=None):
     }
 
 
-def send(subject, body, html=None, attachments=None, cfg=None, config_path=None):
+def send(subject, body, html=None, attachments=None, cfg=None, config_path=None, in_reply_to=None, references=None):
     """Send an email. Tries Resend API first, then SMTP, then local save."""
     if cfg is None:
         cfg = load_config(config_path)
 
     # 1. Try Resend API via HTTPS
     if cfg.get("resend_api_key"):
-        if _send_resend(cfg["resend_api_key"], subject, body, html, attachments, cfg):
+        if _send_resend(cfg["resend_api_key"], subject, body, html, attachments, cfg, in_reply_to, references):
             return True
     else:
         print("[mailer] No resend_api_key configured, skipping Resend API")
@@ -83,7 +83,7 @@ def send(subject, body, html=None, attachments=None, cfg=None, config_path=None)
     return False
 
 
-def _send_resend(api_key, subject, body, html=None, attachments=None, cfg=None):
+def _send_resend(api_key, subject, body, html=None, attachments=None, cfg=None, in_reply_to=None, references=None):
     """Send via Resend.com HTTPS API."""
     try:
         import requests as req
@@ -99,6 +99,13 @@ def _send_resend(api_key, subject, body, html=None, attachments=None, cfg=None):
     }
     if html:
         payload["html"] = html
+    headers = {}
+    if in_reply_to:
+        headers["In-Reply-To"] = in_reply_to
+    if references:
+        headers["References"] = references
+    if headers:
+        payload["headers"] = headers
 
     if attachments:
         file_attachments = []

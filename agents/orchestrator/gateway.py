@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-Orchestrator Commands — IMAP email reader for @eddytester approvals.
+Gateway — IMAP email processor, routes commands to Content Manager, PM Agent, etc.
 
 Connects to Gmail IMAP, finds replies to digest emails from Eddy,
 parses commands and executes them.
@@ -9,10 +8,13 @@ Commands:
   "тг 1"      — approve post (placeholder for now, logs to command log)
   "зашквар: X" — block topic X (adds to blacklist in topics.json)
   "в пул: X"   — add topic X to pool (appends to topics.json)
+  "бэклог X"   — add idea to wishlist (wishlist.json)
+  "dev: X"     — dev/research task → PM Agent (classify + assess)
+  "[BSA]"     — strategy feedback → BSA Agent (dialogue round)
 
 Usage:
-  python3 orchestrator_cmds.py                    # check once and exit
-  python3 orchestrator_cmds.py --loop 60           # check every 60 seconds
+  python3 gateway.py                    # check once and exit
+  python3 gateway.py --loop 60           # check every 60 seconds
 """
 
 import email
@@ -20,7 +22,9 @@ import imaplib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from email.header import decode_header
@@ -38,7 +42,6 @@ WISHLIST_FILE = BASE / "orchestrator" / "wishlist.json"
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 os.makedirs(LOG_FILE.parent, exist_ok=True)
 
-
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
@@ -46,29 +49,23 @@ def log(msg):
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
 
-
 def load_mailcfg():
     with open(MAILCFG) as f:
         return json.load(f)
-
 
 def load_topics():
     with open(TOPICS_FILE) as f:
         return json.load(f)
 
-
 def save_topics(data):
     with open(TOPICS_FILE, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-
-
 
 def load_wishlist():
     if not WISHLIST_FILE.exists():
         return []
     with open(WISHLIST_FILE) as f:
         return json.load(f)
-
 
 def save_wishlist(items):
     with open(WISHLIST_FILE, "w") as f:
@@ -90,7 +87,6 @@ def decode_mime_header(header_value):
             result.append(str(part))
     return "".join(result)
 
-
 def get_email_body(msg):
     """Extract plain text body from an email message."""
     if msg.is_multipart():
@@ -106,7 +102,6 @@ def get_email_body(msg):
                 try:
                     payload = part.get_payload(decode=True)
                     if payload:
-                        # Strip HTML tags for plain text extraction
                         text = payload.decode("utf-8", errors="replace")
                         text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
                         text = re.sub(r"<[^>]+>", " ", text)
@@ -122,7 +117,6 @@ def get_email_body(msg):
         except:
             pass
     return ""
-
 
 def strip_reply_quote(body):
     """Strip quoted original message from a reply."""
@@ -146,36 +140,35 @@ def strip_reply_quote(body):
         clean.append(line)
     return "\n".join(clean).strip()
 
-
 def parse_commands(body):
-    """Parse an email body for orchestrator commands. Returns a list of command dicts."""
+    """Parse an email body for gateway commands. Returns a list of command dicts."""
     body_lower = body.lower().strip()
     results = []
 
-    # "тг 1" — approve post
     if re.search(r"\u0442\u0433\s*1", body_lower):
         results.append({"cmd": "\u0442\u0433 1", "args": None})
 
-    # "зашквар: X" — block topic (find ALL occurrences)
     for m in re.finditer(r"\u0437\u0430\u0448\u043a\u0432\u0430\u0440\s*[:]\s*(.+)", body_lower):
         topic = m.group(1).strip().strip('"').strip("'")
         if len(topic) > 5:
             results.append({"cmd": "\u0437\u0430\u0448\u043a\u0432\u0430\u0440", "args": topic})
 
-    # "в пул: X" — add topic to pool (find ALL occurrences)
     for m in re.finditer(r"\u0432\s+\u043f\u0443\u043b\s*[:]\s*(.+)", body_lower):
         topic = m.group(1).strip().strip('"').strip("'")
         if len(topic) > 10:
             results.append({"cmd": "\u0432 \u043f\u0443\u043b", "args": topic})
 
-    # "бэклог X" — add idea to wishlist (no colon, just "бэклог <idea>")
     for m in re.finditer(r"\u0431\u044d\u043a\u043b\u043e\u0433\s+(.+)", body_lower):
         idea = m.group(1).strip().strip('"').strip("'")
         if len(idea) > 5:
             results.append({"cmd": "\u0431\u044d\u043a\u043b\u043e\u0433", "args": idea})
 
-    return results
+    for m in re.finditer(r"dev\s*:\s*(.+)", body_lower):
+        task = m.group(1).strip().strip('"').strip("'")
+        if len(task) > 5:
+            results.append({"cmd": "dev", "args": task})
 
+    return results
 
 def parse_command(body):
     """Legacy wrapper, parses and returns first command."""
@@ -196,12 +189,10 @@ def execute_command(result, subject):
     elif cmd == "\u0437\u0430\u0448\u043a\u0432\u0430\u0440":
         topic = result["args"]
         if topic and len(topic) > 5:
-            # Add to blacklist
             if "blacklist" not in data:
                 data["blacklist"] = []
             if topic not in data["blacklist"]:
                 data["blacklist"].append(topic)
-                # Remove from pool if present
                 if topic in data["pool"]:
                     data["pool"].remove(topic)
                 save_topics(data)
@@ -244,11 +235,59 @@ def execute_command(result, subject):
                 log(f"CMD: \u0431\u044d\u043a\u043b\u043e\u0433 \u2014 \"{idea[:60]}\" \u0443\u0436\u0435 \u0432 wishlist")
                 return {"action": "wishlisted_duplicate", "detail": idea}
 
+    elif cmd == "dev":
+        task_text = result["args"]
+        if task_text and len(task_text) > 5:
+            from pm_agent import classify_task, assess_task
+            classification = classify_task(task_text)
+            log(f"DEV: \"{task_text[:80]}\" classified as {classification}")
+
+            if classification == "RESEARCH":
+                log(f"DEV: RESEARCH — logged for next researcher cycle")
+                return {"action": "dev_research", "detail": task_text}
+            else:
+                log(f"DEV: CODE — running PM Agent assessment...")
+                assess_task(task_text)
+                log(f"DEV: assessment saved to pm_history.json")
+                return {"action": "dev_assessed", "detail": task_text}
+
     return None
 
 
+BSA_AGENT = BASE / "bsa" / "bsa_agent.py"
+
+
+def route_bsa_email(subject, body, message_id, in_reply_to=""):
+    """Route a [BSA] email reply to BSA Agent for feedback processing."""
+    if "[BSA]" not in subject:
+        return False
+
+    log(f"BSA: routing feedback (msg_id={message_id[:30]})")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write(body)
+        body_file = f.name
+
+    try:
+        subprocess.run(
+            [sys.executable or "python3", str(BSA_AGENT),
+             "--feedback", message_id,
+             "--body-file", body_file,
+             "--in-reply-to", in_reply_to],
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        log("BSA: feedback processing timed out")
+    finally:
+        os.unlink(body_file)
+
+    return True
+
+
+# ── IMAP Processing (restored from original orchestrator_cmds.py) ────────
+
+
 def process_email(msg, msg_id):
-    """Process a single email message for commands."""
+    """Process a single email message for commands and BSA feedback."""
     subject = decode_mime_header(msg.get("Subject", ""))
     from_addr = decode_mime_header(msg.get("From", ""))
     date = msg.get("Date", "")
@@ -267,6 +306,12 @@ def process_email(msg, msg_id):
         log("  SKIP: no text body found")
         return False
 
+    # Check for BSA feedback first (based on subject)
+    in_reply_to = msg.get("In-Reply-To", "") or msg.get("Message-ID", "")
+    if route_bsa_email(subject, clean_body, msg_id, in_reply_to):
+        return True
+
+    # Check for regular commands
     cmd_results = parse_commands(clean_body)
     if not cmd_results:
         log("  SKIP: no command found")
@@ -291,6 +336,8 @@ def process_email(msg, msg_id):
         any_executed = True
 
     return any_executed
+
+
 def load_processed_ids():
     """Load set of already-processed message UIDs."""
     if not PROCESSED_IDS_FILE.exists():
@@ -366,7 +413,7 @@ def check_mail():
         if inbox_results:
             log(f"  Found {len(inbox_results)} commands in INBOX")
 
-        # Check Sent Mail — only last 7 days to avoid scanning years of history
+        # Check Sent Mail — only last 7 days
         log("Checking Sent Mail (last 7 days)...")
         from datetime import datetime, timedelta
         since_date = (datetime.now() - timedelta(days=7)).strftime("%d-%b-%Y")
@@ -388,72 +435,30 @@ def check_mail():
         log(f"IMAP ERROR: {e}")
         return []
 
-    if not password:
-        log("ERROR: no SMTP password in .mailcfg")
-        return []
-
-    try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=15)
-        mail.login(username, password)
-        # Enable UTF-8 for Cyrillic support
-        try:
-            mail._simple_command("ENABLE", "UTF8")
-        except:
-            pass
-        mail.select("INBOX")
-
-        # Search for unread messages from Eddy
-        status, messages = mail.search(None, '(FROM "eddy.super1")')
-
-        processed = []
-        if status == "OK" and messages[0]:
-            msg_ids = messages[0].split()
-            log(f"Found {len(msg_ids)} digest replies from Eddy")
-
-            for mid in msg_ids:
-                status, data = mail.fetch(mid, "(RFC822)")
-                if status != "OK":
-                    continue
-
-                msg = email.message_from_bytes(data[0][1])
-                if process_email(msg, mid):
-                    processed.append(mid)
-
-                # Mark as read
-                mail.store(mid, "+FLAGS", "\\Seen")
-
-        mail.logout()
-        return processed
-
-    except Exception as e:
-        log(f"IMAP ERROR: {e}")
-        return []
-
 
 def main():
-    loop_interval = None
+    """CLI entry point."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Gateway — IMAP command processor")
+    parser.add_argument("--loop", type=int, default=None, help="Check every N seconds")
+    args = parser.parse_args()
 
-    if "--loop" in sys.argv:
-        idx = sys.argv.index("--loop")
-        if idx + 1 < len(sys.argv):
-            try:
-                loop_interval = int(sys.argv[idx + 1])
-            except ValueError:
-                pass
+    cmds = check_mail()
+    if cmds:
+        log(f"Total: {len(cmds)} commands processed")
+    elif args.loop:
+        log("No new commands, sleeping...")
 
-    if loop_interval:
-        log(f"Starting IMAP listener (every {loop_interval}s)...")
-        while True:
-            processed = check_mail()
-            if processed:
-                log(f"Processed {len(processed)} commands")
-            time.sleep(loop_interval)
-    else:
-        processed = check_mail()
-        if processed:
-            log(f"Processed {len(processed)} commands")
-        else:
-            log("No commands found")
+    if args.loop:
+        try:
+            import time as _time
+            while True:
+                _time.sleep(args.loop)
+                cmds = check_mail()
+                if cmds:
+                    log(f"Loop: {len(cmds)} commands processed")
+        except KeyboardInterrupt:
+            log("Gateway loop stopped")
 
 
 if __name__ == "__main__":
