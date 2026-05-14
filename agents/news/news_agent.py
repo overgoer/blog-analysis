@@ -24,6 +24,7 @@ from pathlib import Path
 
 AGENT_DIR = Path("/root/blog-analysis/agents/news")
 ENV_FILE = Path("/root/blog-analysis/agents/.env")
+ORCH_DIR = Path("/root/blog-analysis/agents/orchestrator")
 
 AGENT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +67,17 @@ def load_deepseek_key():
     global DEEPSEEK_KEY
     if DEEPSEEK_KEY:
         return DEEPSEEK_KEY
+    # Try BWVault first
+    try:
+        sys.path.insert(0, str(ORCH_DIR))
+        from bw_helper import BWVault
+        vault = BWVault()
+        key = vault.get_password("DeepSeek API Key")
+        if key:
+            DEEPSEEK_KEY = key
+            return DEEPSEEK_KEY
+    except Exception:
+        pass
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text().splitlines():
             line = line.strip()

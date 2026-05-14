@@ -51,7 +51,14 @@ def log(msg):
 
 
 def load_env():
-    """Load DeepSeek key from .env."""
+    """Load DeepSeek key from BWVault or .env."""
+    try:
+        vault = BWVault()
+        key = vault.get_password("DeepSeek API Key")
+        if key:
+            return key
+    except Exception:
+        pass
     env_file = BASE / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
