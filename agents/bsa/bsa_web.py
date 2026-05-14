@@ -637,7 +637,17 @@ def cli():
 
     port = args.port or cfg.get("port", 3000)
     debug = cfg.get("debug", False)
+    use_https = cfg.get("https", False)
     log(f"BSA Web starting on port {port}")
+    if use_https:
+        cert_dir = BASE / "certs"
+        cert_file = cert_dir / "cert.pem"
+        key_file = cert_dir / "key.pem"
+        if cert_file.exists() and key_file.exists():
+            print(f"BSA Web: https://0.0.0.0:{port}")
+            app.run(host="0.0.0.0", port=port, debug=debug,
+                    ssl_context=(str(cert_file), str(key_file)))
+            return
     print(f"BSA Web: http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=debug)
 
