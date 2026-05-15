@@ -81,7 +81,8 @@ def _is_allowed(path, allowed):
     return any(real.startswith(os.path.realpath(d)) for d in allowed)
 
 
-def tool_read_file(filepath):
+def tool_read_file(**kwargs):
+    fp = kwargs.get("filepath") or kwargs.get("path") or kwargs.get("file", "")
     if not _is_allowed(fp, ALLOWED_READ_DIRS): return "Error: access denied"
     try:
         p = Path(fp)
@@ -100,10 +101,11 @@ def tool_write_file(**kwargs):
         p.write_text(ct, encoding="utf-8"); return f"Saved ({len(ct)} bytes)"
     except Exception as e: return f"Error: {e}"
 
-def tool_list_dir(dirpath):
-    if not _is_allowed(dirpath, ALLOWED_READ_DIRS): return "Error: access denied"
+def tool_list_dir(**kwargs):
+    dp = kwargs.get("dirpath") or kwargs.get("path") or kwargs.get("dir", "")
+    if not _is_allowed(dp, ALLOWED_READ_DIRS): return "Error: access denied"
     try:
-        p = Path(dirpath)
+        p = Path(dp)
         return "\n".join(f.name + ("/" if f.is_dir() else f"  ({f.stat().st_size}b)") for f in p.iterdir())
     except Exception as e: return f"Error: {e}"
 
@@ -220,12 +222,26 @@ def main():
     prompt = build_prompt()
     messages = [{"role": "system", "content": prompt}]
 
-    while True:
+    # Pipe mode: if stdin has data, read all and send as first message
+    piped_input = ""
+    if not sys.stdin.isatty():
         try:
-            user = input("\033[1;33mYou:\033[0m ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye.")
-            break
+            import select
+            if select.select([sys.stdin], [], [], 0.5)[0]:
+                piped_input = sys.stdin.read().strip()
+                print(f"\033[1;32m[Piped {len(piped_input)} chars]\033[0m")
+        except: pass
+
+    while True:
+        if piped_input:
+            user = piped_input
+            piped_input = ""
+        else:
+            try:
+                user = input("\x01\033[1;33m\x02You:\x01\033[0m\x02 ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nBye.")
+                break
 
         if not user: continue
         if user == "/exit": break
