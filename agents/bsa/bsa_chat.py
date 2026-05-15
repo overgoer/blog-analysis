@@ -55,12 +55,17 @@ def call_deepseek(messages, tools=None):
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
     try:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        tmp.write(json.dumps(payload))
+        tmp.close()
         r = subprocess.run(
             ["curl", "-s", "https://api.deepseek.com/chat/completions",
              "-H", f"Authorization: Bearer {key}",
              "-H", "Content-Type: application/json",
-             "-d", json.dumps(payload)],
+             "-d", f"@{tmp.name}"],
             capture_output=True, text=True, timeout=120)
+        os.unlink(tmp.name)
         resp = json.loads(r.stdout)
         choice = resp["choices"][0]
         msg = choice["message"]
