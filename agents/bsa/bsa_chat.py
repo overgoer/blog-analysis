@@ -82,20 +82,22 @@ def _is_allowed(path, allowed):
 
 
 def tool_read_file(filepath):
-    if not _is_allowed(filepath, ALLOWED_READ_DIRS): return "Error: access denied"
+    if not _is_allowed(fp, ALLOWED_READ_DIRS): return "Error: access denied"
     try:
-        p = Path(filepath)
+        p = Path(fp)
         if not p.exists(): return "File not found"
         if p.stat().st_size > 100_000:
             return p.read_text(encoding="utf-8", errors="replace")[:50000] + "\n[...truncated]"
         return p.read_text(encoding="utf-8", errors="replace")
     except Exception as e: return f"Error: {e}"
 
-def tool_write_file(filepath, content):
-    if not _is_allowed(filepath, ALLOWED_WRITE_DIRS): return "Error: can only write to Стратегия/"
+def tool_write_file(**kwargs):
+    fp = kwargs.get('filepath') or kwargs.get('path') or kwargs.get('file', '')
+    ct = kwargs.get('content') or kwargs.get('text') or kwargs.get('body', '')
+    if not _is_allowed(fp, ALLOWED_WRITE_DIRS): return "Error: can only write to Стратегия/"
     try:
-        p = Path(filepath); p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8"); return f"Saved ({len(content)} bytes)"
+        p = Path(fp); p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(ct, encoding="utf-8"); return f"Saved ({len(ct)} bytes)"
     except Exception as e: return f"Error: {e}"
 
 def tool_list_dir(dirpath):
