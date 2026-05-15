@@ -25,7 +25,26 @@ MAILCFG = AGENTS_DIR / ".mailcfg"
 LOG_FILE = Path("/root/blog-analysis/logs/bsa_email.log")
 SESSION_FILE = BASE / "bsa_email_thread.json"
 PROCESSED_FILE = BASE / "bsa_email_processed.txt"
-SESSION_TIMEOUT_H = 10
+LOCK_FILE = BASE / "bsa_email.lock"
+
+
+def acquire_lock():
+    """Try to acquire process lock via fcntl flock. Auto-released on crash."""
+    try:
+        import fcntl
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.ftruncate(fd, 0)
+            os.write(fd, str(os.getpid()).encode())
+            os.fsync(fd)
+            return True
+        except BlockingIOError:
+            os.close(fd)
+            return False
+    except ImportError:
+        return True
+SESSION_TIMEOUT_H = 3
 ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/blog-analysis/data")),
                      str(Path("/root/blog-analysis/agents/orchestrator")),
@@ -96,7 +115,7 @@ def build_prompt():
     # Add email session instructions
     p += "\n\n## EMAIL SESSION\nТы общаешься с Эдди по email. Он пишет тебе письма с темой 'bizzy <тема>'."
     p += "\nОтвечай письмом. Используй инструменты когда нужно. В конце каждого ответа добавь короткий CTA."
-    p += "\nЕсли Эдди не отвечает больше 10 часов — сессия архивируется в Obsidian."
+    p += "\nЕсли Эдди не отвечает больше 3 часов — сессия архивируется в Obsidian."
     return p
 
 # ── Tools ─────────────────────────────────────────────────────────────────
@@ -145,24 +164,6 @@ def tool_run_researcher(topic):
     except subprocess.TimeoutExpired: return "Error: timed out"
     except Exception as e: return f"Error: {e}"
 
-def tool_run_agent(agent_name):
-    script = ALLOWED_AGENTS.get(agent_name)
-    if not script: return f"Unknown agent: {agent_name}"
-    try:
-        r = subprocess.run([str(AGENTS_DIR / ".venv/bin/python3"), script],
-                           capture_output=True, text=True, timeout=300)
-        return r.stdout[-5000:] + ("\nSTDERR:\n" + r.stderr[-1000:] if r.stderr.strip() else "")
-    except subprocess.TimeoutExpired: return f"Agent {agent_name} timed out"
-    except Exception as e: return f"Error: {e}"
-
-def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
-    """Standalone email send (tool call from BSA). Not used for session replies."""
-    try:
-        cfg = json.loads(MAILCFG.read_text())
-        send_resend(subject, body, cfg)
-        return f"Email sent to {to}"
-    except Exception as e: return f"Error: {e}"
-
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -179,19 +180,10 @@ TOOLS = [{"type": "function", "function": {
     "name": "run_researcher",
     "description": "Run researcher on a topic",
     "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}
-}}, {"type": "function", "function": {
-    "name": "run_agent",
-    "description": "Run agent: bsa (audit) or pm (product)",
-    "parameters": {"type": "object", "properties": {"agent_name": {"type": "string", "enum": ["bsa", "pm"]}}, "required": ["agent_name"]}
-}}, {"type": "function", "function": {
-    "name": "send_email",
-    "description": "Send email to eddy.super1@gmail.com",
-    "parameters": {"type": "object", "properties": {"subject": {"type": "string"}, "body": {"type": "string"}, "to": {"type": "string"}}, "required": ["subject", "body"]}
 }}]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file,
-            "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
-            "run_agent": tool_run_agent, "send_email": tool_send_email}
+            "list_dir": tool_list_dir, "run_researcher": tool_run_researcher}
 
 # ── IMAP ──────────────────────────────────────────────────────────────────
 
@@ -443,6 +435,9 @@ def run_conversation(messages):
 
 def process_session():
     """Main logic: check timeout, check IMAP, process new messages."""
+    if not acquire_lock():
+        log("Another instance is running, skipping")
+        return
     session = load_session()
     now = datetime.now()
 
