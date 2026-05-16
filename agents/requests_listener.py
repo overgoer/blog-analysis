@@ -217,6 +217,22 @@ def rebuild_file(user_lines, known_tasks, context_lines=None):
 
 # -- main --
 
+def update_timestamp_in_file():
+    """Update the *последнее обновление* timestamp in requests.md."""
+    try:
+        text = REQUESTS_FILE.read_text(encoding="utf-8")
+        new_ts = f"*последнее обновление: {datetime.now():%H:%M}*"
+        import re
+        if re.search(r"\*последнее обновление: \d{2}:\d{2}\*", text):
+            text = re.sub(r"\*последнее обновление: \d{2}:\d{2}\*", new_ts, text)
+        else:
+            # No existing timestamp, add after status section
+            text = text.replace("-----контекст задач-----", new_ts + "\n\n-----контекст задач-----")
+        REQUESTS_FILE.write_text(text, encoding="utf-8")
+    except Exception as e:
+        log(f"update_timestamp error: {e}")
+
+# -- main --
 
 def main():
     dry_run = "--dry-run" in sys.argv
@@ -248,6 +264,7 @@ def _main(dry_run):
     new_tasks = find_tasks_in_user_section(user_lines)
     if not new_tasks:
         log("No new tasks found")
+        update_timestamp_in_file()
         return
 
     fresh = []
