@@ -26,7 +26,7 @@ BASE = Path(__file__).resolve().parent
 ORCH_DIR = BASE.parent / "orchestrator"
 AGENTS_DIR = BASE.parent
 LOG_FILE = Path("/root/blog-analysis/logs/bsa.log")
-VAULT_DIR = Path("/root/obsidian/notes/eddytester/Стратегия")
+VAULT_DIR = Path("/root/obsidian-vault/eddytester/Стратегия")
 THREAD_FILE = BASE / "bsa_thread.json"
 LOCK_FILE = BASE / ".bsa.lock"
 
