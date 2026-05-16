@@ -98,20 +98,38 @@ def now_str():
 
 def split_sections(text):
     status_marker = "-----статус"
+    discuss_marker = "-----дискуссия"
     context_marker = "-----контекст"
     lines = text.split("\n")
     status_start = None
+    discuss_start = None
     context_start = None
     for i, line in enumerate(lines):
-        if status_marker in line.lower() and status_start is None:
+        lo = line.lower().strip()
+        if status_marker in lo and status_start is None:
             status_start = i
-        if context_marker in line.lower() and context_start is None:
+        if discuss_marker in lo and discuss_start is None:
+            discuss_start = i
+        if context_marker in lo and context_start is None:
             context_start = i
+
+    has_status = status_start is not None
+    user_lines = lines[:status_start] if status_start is not None else lines
+
     if status_start is not None:
-        if context_start is not None:
-            return lines[:status_start], lines[status_start:context_start], lines[context_start:], True
-        return lines[:status_start], lines[status_start:], [], True
-    return lines, [], [], False
+        se = discuss_start if discuss_start is not None else (context_start if context_start is not None else len(lines))
+        status_lines = lines[status_start:se]
+    else:
+        status_lines = []
+
+    if discuss_start is not None:
+        de = context_start if context_start is not None else len(lines)
+        discuss_lines = lines[discuss_start:de]
+    else:
+        discuss_lines = []
+
+    context_lines = lines[context_start:] if context_start is not None else []
+    return user_lines, status_lines, discuss_lines, context_lines, has_status
 
 
 def find_tasks_in_user_section(user_lines):
@@ -186,7 +204,7 @@ def build_status_block(known_tasks):
     return "\n".join(lines)
 
 
-def rebuild_file(user_lines, known_tasks, context_lines=None):
+def rebuild_file(user_lines, known_tasks, discuss_lines=None, context_lines=None):
     """Rebuild requests.md from user content and known tasks."""
     # Safety: remove running entries not matching current user tasks
     user_tasks = set()
@@ -207,6 +225,11 @@ def rebuild_file(user_lines, known_tasks, context_lines=None):
         full_text += user_text + "\n\n"
     full_text += status_block + "\n"
     full_text += f"*последнее обновление: {datetime.now():%H:%M}*\n"
+    # Preserve discussion section if it exists
+    if discuss_lines:
+        discuss_text = "\n".join(discuss_lines).strip()
+        if discuss_text:
+            full_text += discuss_text + "\n\n"
     # Preserve context section if it exists
     if context_lines:
         context_text = "\n".join(context_lines).strip()
@@ -216,6 +239,19 @@ def rebuild_file(user_lines, known_tasks, context_lines=None):
 
 
 # -- main --
+
+def detect_discussion_trigger(discuss_lines):
+    """Check if user wrote a new message starting with ээ that BSA hasn't answered."""
+    text = "\n".join(discuss_lines)
+    pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?)\*\*:\s*(.*)"
+    messages = re.findall(pattern, text)
+    if not messages:
+        return None
+    last_ts, last_author, last_text = messages[-1]
+    if last_author == "\u042d\u0434\u0434\u0438" and last_text.strip().startswith("\u044d\u044d"):
+        return last_text.strip()
+    return None
+
 
 def update_timestamp_in_file():
     """Update the *последнее обновление* timestamp in requests.md."""
@@ -258,12 +294,32 @@ def _main(dry_run):
         git_pull()
 
     content = REQUESTS_FILE.read_text(encoding="utf-8")
-    user_lines, status_lines, context_lines, has_status = split_sections(content)
+    user_lines, status_lines, discuss_lines, context_lines, has_status = split_sections(content)
     known_tasks = parse_status_section(status_lines) if has_status else {}
 
     new_tasks = find_tasks_in_user_section(user_lines)
     if not new_tasks:
-        log("No new tasks found")
+        if discuss_lines:
+            question = detect_discussion_trigger(discuss_lines)
+            if question:
+                log(f"Discussion question: {question[:80]}...")
+                if dry_run:
+                    return
+                log(f"Calling: {BSA_TRIGGER} --mode discuss")
+                result = subprocess.run(
+                    [sys.executable, str(BSA_TRIGGER), "--mode", "discuss", question],
+                    capture_output=True, text=True, timeout=300,
+                )
+                if result.returncode == 0:
+                    log("BSA discuss completed")
+                    if result.stdout:
+                        log(f"BSA discuss output: {result.stdout.strip()[-200:]}")
+                else:
+                    log(f"BSA discuss failed (exit={result.returncode}): {result.stderr[:300]}")
+                git_commit_push()
+                return
+
+        log("No new tasks or discussion")
         update_timestamp_in_file()
         return
 
@@ -293,7 +349,7 @@ def _main(dry_run):
             "status": "pending", "detail": "", "taken_at": now_str(),
         }
 
-    full_text = rebuild_file(user_lines, known_tasks, context_lines)
+    full_text = rebuild_file(user_lines, known_tasks, discuss_lines, context_lines)
     tmp = REQUESTS_FILE.with_suffix(".md.tmp")
     tmp.write_text(full_text, encoding="utf-8")
     tmp.rename(REQUESTS_FILE)
@@ -319,7 +375,7 @@ def _main(dry_run):
     # 3. Merge status: restore any entries BSA may have dropped
     try:
         new_content = REQUESTS_FILE.read_text(encoding="utf-8")
-        _, new_status_lines, _, _ = split_sections(new_content)
+        _, new_status_lines, new_discuss_lines, _, _ = split_sections(new_content)
         new_known = parse_status_section(new_status_lines)
 
         # If BSA wrote any status entries, trust its output.
@@ -335,7 +391,7 @@ def _main(dry_run):
             if restored:
                 for text, info in restored:
                     new_known[text] = info
-                merged_text = rebuild_file(user_lines, new_known, context_lines)
+                merged_text = rebuild_file(user_lines, new_known, new_discuss_lines if new_discuss_lines else discuss_lines, context_lines)
                 mtmp = REQUESTS_FILE.with_suffix(".md.merge.tmp")
                 mtmp.write_text(merged_text, encoding="utf-8")
                 mtmp.rename(REQUESTS_FILE)

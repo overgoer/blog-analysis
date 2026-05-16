@@ -273,6 +273,30 @@ def tool_shorten_task(old_text, new_text):
         return f"Error: {e}"
 
 
+def tool_discuss_reply(response_text):
+    """Append BSA response to -----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f----- section in requests.md."""
+    try:
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        discuss_marker = "-----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f-----"
+        context_marker = "-----\u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u0437\u0430\u0434\u0430\u0447-----"
+        if discuss_marker not in content:
+            return "Error: discussion section not found"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        reply = f"\n{ts} **BSA:** {response_text}"
+        discuss_idx = content.index(discuss_marker) + len(discuss_marker)
+        after = content[discuss_idx:]
+        context_idx = after.find(context_marker) if context_marker in after else -1
+        if context_idx != -1:
+            new_content = content[:discuss_idx] + after[:context_idx] + reply + "\n" + after[context_idx:]
+        else:
+            new_content = content + reply + "\n"
+        REQUESTS_FILE.write_text(new_content, encoding="utf-8")
+        return f"\u2705 Response written ({len(response_text)} chars)"
+    except Exception as e:
+        log(f"discuss_reply error: {e}")
+        return f"Error: {e}"
+
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -326,7 +350,8 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
-            "run_agent": tool_run_agent, "send_email": tool_send_email}
+            "run_agent": tool_run_agent, "send_email": tool_send_email,
+            "discuss_reply": tool_discuss_reply}
 
 
 def build_prompt():
@@ -418,6 +443,31 @@ def trigger_mode():
     log("BSA trigger mode completed")
 
 
+def discuss_mode(question):
+    """BSA discussion mode: answer user question and write reply."""
+    if not load_key():
+        log("ERROR: No API key in discuss mode")
+        sys.exit(1)
+    log("BSA discuss mode started")
+
+    discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
+    prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+
+    messages = [
+        {"role": "system", "content": prompt_text},
+        {"role": "user", "content": question}
+    ]
+
+    resp, _ = run_conversation(messages)
+    if resp:
+        log(f"BSA discuss response: {resp[:300]}...")
+        print(resp)
+    else:
+        log("BSA discuss: completed (tool calls only)")
+        print("BSA discuss: completed")
+    log("BSA discuss mode completed")
+
+
 def main():
     # Handle --mode trigger
     if "--mode" in sys.argv:
@@ -425,6 +475,10 @@ def main():
         mode = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "chat"
         if mode == "trigger":
             trigger_mode()
+            return
+        if mode == "discuss":
+            question = " ".join(sys.argv[idx+2:]) if len(sys.argv) > idx + 2 else ""
+            discuss_mode(question)
             return
         # else fall through to chat (for future modes)
 
