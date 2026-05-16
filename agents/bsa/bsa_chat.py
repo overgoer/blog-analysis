@@ -461,13 +461,23 @@ def discuss_mode(question):
     resp, _ = run_conversation(messages)
     if resp:
         log(f"BSA discuss response: {resp[:300]}...")
-        # Auto-write if BSA didn't call discuss_reply
+        # Auto-write response if BSA did not reply to last question
         try:
+            import re
             content = REQUESTS_FILE.read_text(encoding="utf-8")
-            discuss_marker = "-----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f-----"
+            discuss_marker = "-----дискуссия-----"
             if discuss_marker in content:
-                discuss_sec = content.split(discuss_marker)[-1].split("-----\u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442")[0]
-                if "**BSA:" not in discuss_sec:
+                sec = content.split(discuss_marker)[-1].split("-----контекст")[0]
+                msgs = re.findall(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?):\*\*\s*(.*)", sec)
+                needs_reply = True
+                if msgs:
+                    for i in range(len(msgs)-1, -1, -1):
+                        ts, author, text = msgs[i]
+                        if author == "Эдди" and text.strip().startswith("ээ"):
+                            has_bsa = any(m[1] == "BSA" for m in msgs[i+1:])
+                            needs_reply = not has_bsa
+                            break
+                if needs_reply:
                     tool_discuss_reply(resp)
                     log("Auto-wrote response via discuss_reply fallback")
         except Exception as e:
