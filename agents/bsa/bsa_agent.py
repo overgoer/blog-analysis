@@ -670,6 +670,25 @@ def run_weekly_audit(dry_run=False):
         for item in done:
             email_body.append(f"  • {item}")
         email_body.append("")
+    # Read backlog for current in-progress tasks
+    backlog_path = Path("/root/obsidian-vault/backlog.md")
+    in_progress_tasks = []
+    if backlog_path.exists():
+        bcontent = backlog_path.read_text(encoding="utf-8")
+        in_work = False
+        for line in bcontent.split("\n"):
+            if line.strip().startswith("## В работе"):
+                in_work = True
+            elif line.strip().startswith("## Готово"):
+                in_work = False
+            if in_work and line.strip().startswith("- ["):
+                in_progress_tasks.append(line.strip())
+    if in_progress_tasks:
+        email_body.append("🔄 В работе (делегировано агентам):")
+        for t in in_progress_tasks:
+            email_body.append(f"  {t}")
+        email_body.append("")
+
     gaps = state.get("gaps", [])
     if gaps:
         email_body.append("⚠️ Gaps:")
