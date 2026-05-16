@@ -9,7 +9,7 @@ BSA Chat — терминальный чат с Business Strategy Advisor @eddyt
 Весь контекст, все инструменты, никаких костылей.
 """
 
-import hashlib, json, os, subprocess, sys, readline, shutil
+import hashlib, json, os, re, subprocess, sys, readline, shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -192,7 +192,7 @@ def tool_update_status(task_text, status="running", detail=""):
         known_tasks = {}
         for line in existing_status.split("\n"):
             ls = line.strip()
-            m = re.match(r"^([\u2705\U0001f504\u274c\u23f3])\s+(.+?)(?:\s*(?:\u2192|\u2014)\s*(.+))?$", ls)
+            m = re.match(r"^([\u2705\U0001f504\u274c\u23f3])\s+(.+?)(?:\s*(?:\u2192)\s*(.+))?$", ls)
             if m:
                 emoji_map = {"\u2705": "done", "\U0001f504": "running", "\u274c": "failed", "\u23f3": "pending"}
                 txt = m.group(2).strip()
@@ -211,6 +211,21 @@ def tool_update_status(task_text, status="running", detail=""):
         for k in list(running):
             if k in done:
                 del running[k]
+        # Safety: remove running entries not matching current user tasks
+        # (handles BSA task shortening leaving stale keys)
+        try:
+            user_sec = content.split("-----задачи к BSA-----")[1].split("-----статус BSA-----")[0]
+            user_tasks = set()
+            for line in user_sec.split(chr(10)):
+                line = line.strip().rstrip("!").strip()
+                if line and not line.startswith("-"):
+                    user_tasks.add(line)
+            if user_tasks:
+                stale = [k for k in running if k not in user_tasks]
+                for k in stale:
+                    del running[k]
+        except Exception:
+            pass
         if running:
             lines.append("\u0412 \u0440\u0430\u0431\u043e\u0442\u0435:")
             for text in running:

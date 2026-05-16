@@ -134,7 +134,7 @@ def parse_status_section(status_lines):
     known = {}
     for line in status_lines:
         ls = line.strip()
-        m = re.match(r"^([✅🔄❌⏳])\s+(.+?)(?:\s*(?:→|—)\s*(.+))?$", ls)
+        m = re.match(r"^([✅🔄❌⏳])\s+(.+?)(?:\s*→\s*(.+))?$", ls)
         if m:
             emoji = m.group(1)
             raw_text = m.group(2).strip()
@@ -188,6 +188,16 @@ def build_status_block(known_tasks):
 
 def rebuild_file(user_lines, known_tasks, context_lines=None):
     """Rebuild requests.md from user content and known tasks."""
+    # Safety: remove running entries not matching current user tasks
+    user_tasks = set()
+    for line in user_lines:
+        line = line.strip().rstrip("!").strip()
+        if line:
+            user_tasks.add(line)
+    if user_tasks:
+        stale = [k for k in list(known_tasks) if known_tasks[k].get("status") in ("running", "pending") and k not in user_tasks]
+        for k in stale:
+            del known_tasks[k]
     status_block = build_status_block(known_tasks)
     user_header = "-----задачи к BSA-----"
     user_text = "\n".join(user_lines).strip()
