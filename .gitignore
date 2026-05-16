@@ -14,3 +14,4 @@ agents/researcher/
 node_modules/
 .venv/
 .opencode/
+.env
