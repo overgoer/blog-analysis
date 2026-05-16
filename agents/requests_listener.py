@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
 """
-requests_listener.py — reads requests.md, finds new ! tasks, routes them.
+requests_listener.py v2 — дверной звонок для BSA.
 
-Sections in requests.md:
-  -----задачи к BSA-----    <- user writes here
-  -----статус BSA-----      <- BSA writes here (in-progress/done)
+Читает requests.md, находит новые ! задачи,
+отмечает их как ⏳ и будит BSA (bsa_chat.py --mode trigger).
 
-Classification:
-  RESEARCH  -> researcher.py (DeepSeek, runs on server)
-  CONTENT   -> queued for BSA (strategic agent)
-  DEV       -> queued for BSA
+Ничего не классифицирует, не запускает агентов.
+Всё решение — за BSA.
 
 Safe by design:
 - Uses flock to prevent concurrent runs
-- Task state is in the file itself — crash-safe
+- Atomic write via .tmp + rename
 - Dry-run mode (--dry-run) for testing
 """
 
-import json
 import os
 import re
 import subprocess
 import sys
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 # -- Config --
@@ -32,23 +27,7 @@ VAULT_DIR = Path("/root/obsidian-vault")
 LOCK_FILE = Path("/tmp/requests_listener.lock")
 LOG_FILE = Path("/tmp/requests_listener.log")
 AGENTS_DIR = Path("/root/blog-analysis/agents")
-RESEARCHER = AGENTS_DIR / "researcher" / "researcher.py"
-
-TIMEOUT_MINUTES = 30  # if running task older than this, retry
-
-# Classification keywords (lowercase)
-RESEARCH_KEYS = [
-    "исследуй", "research", "найди", "изучи", "поищи",
-    "разбери", "проанализируй", "собери", "проверь",
-]
-CONTENT_KEYS = [
-    "напиши", "перепиши", "пост", "создай", "отредактируй",
-    "оформи", "дополни", "придумай", "напиcать",
-]
-DEV_KEYS = [
-    "сделай", "реализуй", "добавь", "почини", "настрой",
-    "установи", "обнови", "переделай", "мигрируй",
-]
+BSA_TRIGGER = AGENTS_DIR / "bsa" / "bsa_chat.py"
 
 
 def log(msg):
@@ -138,10 +117,8 @@ def split_sections(text):
 
 
 def find_tasks_in_user_section(user_lines):
-    """Find tasks ending with ! in user section. Each line = one task."""
+    """Find tasks ending with ! in user section."""
     tasks = []
-    # Join lines, split into logical blocks (separated by blank lines),
-    # but each line ending with ! within a block is a separate task
     full_text = "\n".join(user_lines)
     lines = full_text.split("\n")
     for line in lines:
@@ -155,21 +132,6 @@ def find_tasks_in_user_section(user_lines):
     return tasks
 
 
-def classify_task(task_text):
-    """Classify task: RESEARCH / CONTENT / DEV."""
-    t = task_text.lower()
-    for kw in RESEARCH_KEYS:
-        if kw in t:
-            return "RESEARCH"
-    for kw in CONTENT_KEYS:
-        if kw in t:
-            return "CONTENT"
-    for kw in DEV_KEYS:
-        if kw in t:
-            return "DEV"
-    return "CONTENT"  # default: send to BSA
-
-
 def parse_status_section(status_lines):
     """Parse running/done tasks from status section.
     Returns dict: clean_task_text -> {status, detail, taken_at}
@@ -177,13 +139,11 @@ def parse_status_section(status_lines):
     known = {}
     for line in status_lines:
         ls = line.strip()
-        # Match patterns: ✅ task, 🔄 task (взято HH:MM), ❌ task
         m = re.match(r"^([✅🔄❌⏳])\s+(.+?)(?:\s*→\s*(.+))?$", ls)
         if m:
             emoji = m.group(1)
             raw_text = m.group(2).strip()
             detail = m.group(3).strip() if m.group(3) else ""
-            # Extract (взято HH:MM) from running tasks
             taken_match = re.search(r"\(взято (\d+:\d+)\)", raw_text)
             taken_at = taken_match.group(1) if taken_match else None
             clean_text = re.sub(r"\s*\(взято \d+:\d+\)", "", raw_text).strip()
@@ -196,66 +156,33 @@ def parse_status_section(status_lines):
     return known
 
 
-def build_status_block(tasks_running, tasks_done):
-    """Build the status section markdown."""
+def build_status_block(known_tasks):
+    """Build the status section markdown from known_tasks dict."""
     lines = []
     lines.append("-----статус BSA-----")
     lines.append("")
-    if tasks_running:
+
+    running = {k: v for k, v in known_tasks.items()
+               if v["status"] in ("running", "pending")}
+    done = {k: v for k, v in known_tasks.items()
+            if v["status"] == "done"}
+
+    if running:
         lines.append("В работе:")
-        for t in tasks_running:
-            lines.append(f"🔄 {t['text']} (взято {t['taken_at']})")
+        for text, info in running.items():
+            taken = f" (взято {info['taken_at']})" if info.get('taken_at') else ""
+            lines.append(f"🔄 {text}{taken}")
         lines.append("")
-    if tasks_done:
+    if done:
         lines.append("Готово:")
-        for t in tasks_done:
-            detail = f" → {t['detail']}" if t.get('detail') else ""
-            lines.append(f"✅ {t['text']}{detail}")
+        for text, info in done.items():
+            detail = f" → {info['detail']}" if info.get('detail') else ""
+            lines.append(f"✅ {text}{detail}")
         lines.append("")
-    if not tasks_running and not tasks_done:
+    if not running and not done:
         lines.append("(нет активных задач)")
         lines.append("")
     return "\n".join(lines)
-
-
-# -- task execution --
-
-
-def run_researcher(topic):
-    """Run researcher.py. Returns (success, result_path_or_msg)."""
-    try:
-        log(f"  Starting researcher: {topic[:80]}")
-        r = subprocess.run(
-            [sys.executable, str(RESEARCHER), topic],
-            capture_output=True, text=True, timeout=300,
-        )
-        # Find report path in stdout
-        m = re.search(r"(?:Полный отчёт|Full report):\s*(.+\.md)", r.stdout)
-        if m:
-            return True, m.group(1)
-        elif r.returncode == 0:
-            return True, ""
-        else:
-            return False, r.stderr[:200]
-    except subprocess.TimeoutExpired:
-        return False, "TIMEOUT"
-    except Exception as e:
-        return False, str(e)
-
-
-def is_stale(taken_at):
-    """Check if running task is older than TIMEOUT_MINUTES."""
-    if not taken_at:
-        return True
-    try:
-        parts = taken_at.split(":")
-        now = datetime.now()
-        taken = now.replace(hour=int(parts[0]), minute=int(parts[1]), second=0)
-        if taken > now:
-            taken -= timedelta(days=1)
-        return (now - taken).total_seconds() > TIMEOUT_MINUTES * 60
-    except (ValueError, IndexError):
-        return True
 
 
 # -- main --
@@ -275,7 +202,7 @@ def main():
 
 def _main(dry_run):
     log("=" * 40)
-    log("requests_listener started" + (" (DRY RUN)" if dry_run else ""))
+    log(f"requests_listener v2 started{' (DRY RUN)' if dry_run else ''}")
 
     if not REQUESTS_FILE.exists():
         log(f"{REQUESTS_FILE} not found, skipping")
@@ -292,92 +219,66 @@ def _main(dry_run):
     new_tasks = find_tasks_in_user_section(user_lines)
     if not new_tasks:
         log("No new tasks found")
-        # Check for stale running tasks
-        for t, info in known_tasks.items():
-            if info["status"] == "running" and is_stale(info.get("taken_at", "")):
-                log(f"  Stale task detected: {t}")
         return
 
-    log(f"Found {len(new_tasks)} new task(s)")
+    # Filter out tasks already tracked in status section
+    fresh = []
+    for t in new_tasks:
+        if t["text"] in known_tasks:
+            known_status = known_tasks[t["text"]]["status"]
+            log(f"Already tracked ({known_status}), skipping: {t['text']}")
+            continue
+        fresh.append(t)
 
-    tasks_running = []
-    tasks_done = []
+    if not fresh:
+        log("All tasks already tracked by BSA")
+        return
 
-    for task in new_tasks:
-        task_text = task["text"]
+    log(f"Found {len(fresh)} new task(s), waking BSA")
 
-        # Skip if already known
-        if task_text in known_tasks:
-            info = known_tasks[task_text]
-            if info["status"] == "done":
-                log(f"  Already done, skipping: {task_text}")
-                tasks_done.append({"text": task_text, "detail": info["detail"]})
-                continue
-            elif info["status"] == "running":
-                if is_stale(info.get("taken_at", "")):
-                    log(f"  Stale, retrying: {task_text}")
-                else:
-                    log(f"  Already running: {task_text}")
-                    continue
+    if dry_run:
+        log("[DRY RUN] would mark ⏳ and call BSA")
+        for t in fresh:
+            log(f"  ⏳ {t['text']}")
+        return
 
-        task_type = classify_task(task_text)
-        log(f"  [{task_type}] {task_text}")
+    # 1. Mark tasks as ⏳ (pending) in status section
+    for t in fresh:
+        known_tasks[t["text"]] = {
+            "status": "pending",
+            "detail": "",
+            "taken_at": now_str(),
+        }
 
-        if task_type == "RESEARCH":
-            if dry_run:
-                log("    [DRY RUN] would run researcher")
-                continue
-            success, result = run_researcher(task_text)
-            if success:
-                detail = f"[отчёт]({result})" if result else "выполнено"
-                tasks_done.append({"text": task_text, "detail": detail})
-                log(f"    DONE: {result}")
-            else:
-                tasks_done.append({"text": task_text, "detail": f"❌ {result}"})
-                log(f"    FAILED: {result}")
-        else:
-            if dry_run:
-                log(f"    [DRY RUN] would queue for BSA")
-                continue
-            tasks_running.append({"text": task_text, "taken_at": now_str()})
-            log("    Queued for BSA")
-
-    # Merge with existing done tasks (preserve history)
-    existing_done = [
-        {"text": t, "detail": info["detail"]}
-        for t, info in known_tasks.items()
-        if info["status"] == "done"
-    ]
-    done_texts = set(t["text"] for t in tasks_done)
-    for t in existing_done:
-        if t["text"] not in done_texts:
-            tasks_done.append(t)
-
-    status_block = build_status_block(tasks_running, tasks_done)
-
-    # Reconstruct full file
+    # Rebuild file with updated status
+    status_block = build_status_block(known_tasks)
     user_header = "-----задачи к BSA-----"
     user_text = "\n".join(user_lines).strip()
-    # Remove any stray status markers
     user_text = re.sub(r"^-----.*$", "", user_text, flags=re.MULTILINE).strip()
     full_text = user_header + "\n\n"
     if user_text:
         full_text += user_text + "\n\n"
     full_text += status_block + "\n"
 
-    if dry_run:
-        log("\n=== DRY RUN OUTPUT ===")
-        print(full_text)
-        return
-
-    # Atomic write
+    # Atomic write + commit
     tmp = REQUESTS_FILE.with_suffix(".md.tmp")
     tmp.write_text(full_text, encoding="utf-8")
     tmp.rename(REQUESTS_FILE)
-    log("File updated")
+    git_commit_push()
+    log("Marked ⏳, committed. Now waking BSA...")
 
-    pushed = git_commit_push()
-    log(f"Done (pushed={pushed})")
+    # 2. Call BSA trigger (non-blocking for listener, but we wait for feedback)
+    log(f"Calling: {BSA_TRIGGER} --mode trigger")
+    result = subprocess.run(
+        [sys.executable, str(BSA_TRIGGER), "--mode", "trigger"],
+        capture_output=True, text=True, timeout=600,
+    )
+    if result.returncode == 0:
+        log("BSA completed successfully")
+        if result.stdout:
+            log(f"BSA output (last 200): {result.stdout.strip()[-200:]}")
+    else:
+        log(f"BSA failed (exit={result.returncode}): {result.stderr[:300]}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@
 """
 BSA Chat — терминальный чат с Business Strategy Advisor @eddytester.
 
-Запуск: python3 bsa_chat.py
+Запуск:
+  python3 bsa_chat.py                       # интерактивный чат
+  python3 bsa_chat.py --mode trigger        # однократный триггер от listener
 
 Весь контекст, все инструменты, никаких костылей.
 """
@@ -18,8 +20,12 @@ VAULT = Path("/root/obsidian-vault/eddytester")
 OBSIDIAN_STRAT = VAULT / "Стратегия"
 CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
+PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
+REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
+BACKLOG_FILE = Path("/root/obsidian-vault/backlog.md")
 LOG_FILE = Path("/root/blog-analysis/logs/bsa_chat.log")
 ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
+                     str(Path("/root/obsidian-vault")),
                      str(Path("/root/blog-analysis/data")),
                      str(Path("/root/blog-analysis/agents/orchestrator")),
                      str(Path("/root/blog-analysis/agents/researcher")),
@@ -121,6 +127,32 @@ def tool_run_researcher(topic):
     except subprocess.TimeoutExpired: return "Error: timed out"
     except Exception as e: return f"Error: {e}"
 
+def tool_run_content_manager(topic):
+    """Run full content pipeline for a topic."""
+    try:
+        r = subprocess.run(
+            [str(AGENTS_DIR / ".venv/bin/python3"),
+             str(AGENTS_DIR / "orchestrator/content_manager.py"),
+             "--topic", topic, "--no-email"],
+            capture_output=True, text=True, timeout=600,
+            cwd=str(AGENTS_DIR))
+        return (r.stdout[-5000:] + ("\nSTDERR:\n" + r.stderr[-1000:])
+                if r.stderr.strip() else r.stdout[-5000:])
+    except subprocess.TimeoutExpired: return "Error: content manager timed out"
+    except Exception as e: return f"Error: {e}"
+
+def tool_run_pm_agent(task_text):
+    """Run PM Agent for GO/NO_GO assessment."""
+    try:
+        r = subprocess.run(
+            [str(AGENTS_DIR / ".venv/bin/python3"),
+             str(AGENTS_DIR / "orchestrator/pm_agent.py"), task_text],
+            capture_output=True, text=True, timeout=120)
+        return (r.stdout[-3000:] + ("\nSTDERR:\n" + r.stderr[-500:])
+                if r.stderr.strip() else r.stdout[-3000:])
+    except subprocess.TimeoutExpired: return "Error: PM Agent timed out"
+    except Exception as e: return f"Error: {e}"
+
 def tool_run_agent(agent_name):
     script = ALLOWED_AGENTS.get(agent_name)
     if not script: return f"Unknown agent: {agent_name}"
@@ -157,6 +189,14 @@ TOOLS = [{"type": "function", "function": {
     "description": "Run researcher on a topic",
     "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}
 }}, {"type": "function", "function": {
+    "name": "run_content_manager",
+    "description": "Run full content pipeline on a topic. Use for content generation tasks.",
+    "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}
+}}, {"type": "function", "function": {
+    "name": "run_pm_agent",
+    "description": "Run PM Agent for GO/NO_GO on a dev task.",
+    "parameters": {"type": "object", "properties": {"task_text": {"type": "string"}}, "required": ["task_text"]}
+}}, {"type": "function", "function": {
     "name": "run_agent",
     "description": "Run agent: bsa (audit) or pm (product)",
     "parameters": {"type": "object", "properties": {"agent_name": {"type": "string", "enum": ["bsa", "pm"]}}, "required": ["agent_name"]}
@@ -168,6 +208,8 @@ TOOLS = [{"type": "function", "function": {
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file,
             "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
+            "run_content_manager": tool_run_content_manager,
+            "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email}
 
 
@@ -207,7 +249,69 @@ def run_conversation(messages):
     return "Iteration limit reached.", messages
 
 
+def trigger_mode():
+    """One-shot BSA session: read requests.md, decide, delegate, update status."""
+    if not load_key():
+        log("ERROR: No API key in trigger mode")
+        print("ERROR: DeepSeek API key not found", file=sys.stderr)
+        sys.exit(1)
+
+    log("BSA trigger mode started")
+
+    # Load trigger prompt
+    prompt_text = "You are BSA. Read requests.md and act."
+    if PROMPT_TRIGGER_FILE.exists():
+        prompt_text = PROMPT_TRIGGER_FILE.read_text(encoding="utf-8")
+    elif PROMPT_FILE.exists():
+        prompt_text = PROMPT_FILE.read_text(encoding="utf-8")
+
+    # Build extra context
+    extra = []
+    if CONTENT_MAP.exists():
+        try:
+            posts = json.loads(CONTENT_MAP.read_text())
+            recent = posts[-5:]
+            extra.append("\nRecent posts:\n" + "\n".join(
+                f"- {p.get('title','?')} ({p.get('date','?')})" for p in recent))
+        except: pass
+    strat_dir = OBSIDIAN_STRAT
+    sfiles = list(strat_dir.glob("*.md")) if strat_dir.exists() else []
+    if sfiles:
+        extra.append(f"\nStrategy files: {', '.join(f.name for f in sfiles)}")
+
+    full_prompt = prompt_text + "\n".join(extra)
+
+    messages = [
+        {"role": "system", "content": full_prompt},
+        {"role": "user", "content": (
+            "Новое сообщение в requests.md. "
+            "Прочитай файл, пойми что нужно, прими решение и действуй. "
+            "После завершения обнови статус в requests.md.")}
+    ]
+
+    # Run conversation (max 8 iterations)
+    resp, _ = run_conversation(messages)
+
+    if resp:
+        log(f"BSA trigger response: {resp[:300]}...")
+        print(resp)
+    else:
+        log("BSA trigger: completed (tool calls only)")
+        print("BSA trigger: completed")
+
+    log("BSA trigger mode completed")
+
+
 def main():
+    # Handle --mode trigger
+    if "--mode" in sys.argv:
+        idx = sys.argv.index("--mode")
+        mode = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "chat"
+        if mode == "trigger":
+            trigger_mode()
+            return
+        # else fall through to chat (for future modes)
+
     # Check API key first
     if not load_key():
         print("ERROR: DeepSeek API key not found. Check Bitwarden or DEEPSEEK_API_KEY env var.")
