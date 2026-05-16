@@ -138,12 +138,14 @@ def split_sections(text):
 
 
 def find_tasks_in_user_section(user_lines):
-    """Find task paragraphs ending with ! in user section."""
-    full_text = "\n".join(user_lines)
-    paragraphs = re.split(r"\n\s*\n", full_text.strip())
+    """Find tasks ending with ! in user section. Each line = one task."""
     tasks = []
-    for para in paragraphs:
-        stripped = para.strip()
+    # Join lines, split into logical blocks (separated by blank lines),
+    # but each line ending with ! within a block is a separate task
+    full_text = "\n".join(user_lines)
+    lines = full_text.split("\n")
+    for line in lines:
+        stripped = line.strip()
         if not stripped:
             continue
         if stripped.endswith("!"):
@@ -228,7 +230,7 @@ def run_researcher(topic):
             capture_output=True, text=True, timeout=300,
         )
         # Find report path in stdout
-        m = re.search(r"Полный отчёт: (.+\.md)", r.stdout)
+        m = re.search(r"(?:Полный отчёт|Full report):\s*(.+\.md)", r.stdout)
         if m:
             return True, m.group(1)
         elif r.returncode == 0:
