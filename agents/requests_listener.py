@@ -8,10 +8,7 @@ requests_listener.py v2 — дверной звонок для BSA.
 Ничего не классифицирует, не запускает агентов.
 Всё решение — за BSA.
 
-Safe by design:
-- Uses flock to prevent concurrent runs
-- Atomic write via .tmp + rename
-- Dry-run mode (--dry-run) for testing
+После BSA — мержит статус, чтобы не потерять записи.
 """
 
 import os
@@ -39,7 +36,6 @@ def log(msg):
 
 
 def acquire_lock():
-    """Acquire process lock via fcntl. Safe for cron."""
     try:
         import fcntl
         fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR)
@@ -64,7 +60,6 @@ def release_lock():
 
 
 def git_pull():
-    """Pull latest changes before reading."""
     subprocess.run(
         ["git", "-C", str(VAULT_DIR), "pull", "origin", "main", "--ff-only"],
         capture_output=True, timeout=30,
@@ -72,7 +67,6 @@ def git_pull():
 
 
 def git_commit_push():
-    """Commit and push status changes to requests.md."""
     subprocess.run(
         ["git", "-C", str(VAULT_DIR), "add", str(REQUESTS_FILE)],
         capture_output=True, timeout=30,
@@ -103,7 +97,6 @@ def now_str():
 
 
 def split_sections(text):
-    """Split into (user_content_lines, status_lines)."""
     status_marker = "-----статус"
     lines = text.split("\n")
     status_start = None
@@ -117,7 +110,6 @@ def split_sections(text):
 
 
 def find_tasks_in_user_section(user_lines):
-    """Find tasks ending with ! in user section."""
     tasks = []
     full_text = "\n".join(user_lines)
     lines = full_text.split("\n")
@@ -133,9 +125,7 @@ def find_tasks_in_user_section(user_lines):
 
 
 def parse_status_section(status_lines):
-    """Parse running/done tasks from status section.
-    Returns dict: clean_task_text -> {status, detail, taken_at}
-    """
+    """Parse status section entries into dict."""
     known = {}
     for line in status_lines:
         ls = line.strip()
@@ -157,7 +147,6 @@ def parse_status_section(status_lines):
 
 
 def build_status_block(known_tasks):
-    """Build the status section markdown from known_tasks dict."""
     lines = []
     lines.append("-----статус BSA-----")
     lines.append("")
@@ -185,6 +174,19 @@ def build_status_block(known_tasks):
     return "\n".join(lines)
 
 
+def rebuild_file(user_lines, known_tasks):
+    """Rebuild requests.md from user content and known tasks."""
+    status_block = build_status_block(known_tasks)
+    user_header = "-----задачи к BSA-----"
+    user_text = "\n".join(user_lines).strip()
+    user_text = re.sub(r"^-----.*$", "", user_text, flags=re.MULTILINE).strip()
+    full_text = user_header + "\n\n"
+    if user_text:
+        full_text += user_text + "\n\n"
+    full_text += status_block + "\n"
+    return full_text
+
+
 # -- main --
 
 
@@ -208,7 +210,6 @@ def _main(dry_run):
         log(f"{REQUESTS_FILE} not found, skipping")
         return
 
-    # Pull latest
     if not dry_run:
         git_pull()
 
@@ -221,7 +222,6 @@ def _main(dry_run):
         log("No new tasks found")
         return
 
-    # Filter out tasks already tracked in status section
     fresh = []
     for t in new_tasks:
         if t["text"] in known_tasks:
@@ -242,32 +242,23 @@ def _main(dry_run):
             log(f"  ⏳ {t['text']}")
         return
 
-    # 1. Mark tasks as ⏳ (pending) in status section
+    # 1. Mark as ⏳ and save pre-BSA state for merge
     for t in fresh:
         known_tasks[t["text"]] = {
-            "status": "pending",
-            "detail": "",
-            "taken_at": now_str(),
+            "status": "pending", "detail": "", "taken_at": now_str(),
         }
 
-    # Rebuild file with updated status
-    status_block = build_status_block(known_tasks)
-    user_header = "-----задачи к BSA-----"
-    user_text = "\n".join(user_lines).strip()
-    user_text = re.sub(r"^-----.*$", "", user_text, flags=re.MULTILINE).strip()
-    full_text = user_header + "\n\n"
-    if user_text:
-        full_text += user_text + "\n\n"
-    full_text += status_block + "\n"
-
-    # Atomic write + commit
+    full_text = rebuild_file(user_lines, known_tasks)
     tmp = REQUESTS_FILE.with_suffix(".md.tmp")
     tmp.write_text(full_text, encoding="utf-8")
     tmp.rename(REQUESTS_FILE)
     git_commit_push()
     log("Marked ⏳, committed. Now waking BSA...")
 
-    # 2. Call BSA trigger (non-blocking for listener, but we wait for feedback)
+    # Save snapshot of known_tasks BEFORE BSA for merge recovery
+    pre_bsa_tasks = dict(known_tasks)
+
+    # 2. Call BSA trigger
     log(f"Calling: {BSA_TRIGGER} --mode trigger")
     result = subprocess.run(
         [sys.executable, str(BSA_TRIGGER), "--mode", "trigger"],
@@ -279,6 +270,32 @@ def _main(dry_run):
             log(f"BSA output (last 200): {result.stdout.strip()[-200:]}")
     else:
         log(f"BSA failed (exit={result.returncode}): {result.stderr[:300]}")
+
+    # 3. Merge status: restore any entries BSA may have dropped
+    try:
+        new_content = REQUESTS_FILE.read_text(encoding="utf-8")
+        _, new_status_lines, _ = split_sections(new_content)
+        new_known = parse_status_section(new_status_lines)
+
+        restored = []
+        for text, info in pre_bsa_tasks.items():
+            if text not in new_known:
+                if info["status"] in ("running", "pending"):
+                    restored.append((text, info))
+                    log(f"  Restored missing status: {text}")
+
+        if restored:
+            for text, info in restored:
+                new_known[text] = info
+
+            merged_text = rebuild_file(user_lines, new_known)
+            mtmp = REQUESTS_FILE.with_suffix(".md.merge.tmp")
+            mtmp.write_text(merged_text, encoding="utf-8")
+            mtmp.rename(REQUESTS_FILE)
+            git_commit_push()
+            log(f"Restored {len(restored)} lost status entries")
+    except Exception as e:
+        log(f"Status merge failed: {e}")
 
 
 if __name__ == "__main__":
