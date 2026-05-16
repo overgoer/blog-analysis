@@ -244,6 +244,16 @@ def tool_update_status(task_text, status="running", detail=""):
         new_status = "\n".join(lines)
         before = content[:status_idx]
         REQUESTS_FILE.write_text(before + new_status + "\n" + rest, encoding="utf-8")
+        # Write BSA_LOG.md entry when task is done
+        if status == "done" and detail:
+            try:
+                log_path = VAULT.parent / "BSA_LOG.md"
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                entry = f"- {now} \u2705 {task_text} \u2192 {detail}\n"
+                with open(str(log_path), "a") as lf:
+                    lf.write(entry)
+            except Exception:
+                pass
         return f"Status updated: {task_text} \u2192 {status}"
     except Exception as e:
         log(f"update_status error: {e}")

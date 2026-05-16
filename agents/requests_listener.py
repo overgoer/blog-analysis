@@ -205,7 +205,11 @@ def rebuild_file(user_lines, known_tasks, context_lines=None):
     full_text = user_header + "\n\n"
     if user_text:
         full_text += user_text + "\n\n"
-    full_text += status_block + "\n"
+    full_text += status_block + "
+"
+    full_text += f"*последнее обновление: {datetime.now():%H:%M}*
+
+"
     # Preserve context section if it exists
     if context_lines:
         context_text = "\n".join(context_lines).strip()
