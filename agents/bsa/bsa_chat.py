@@ -30,7 +30,7 @@ ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/blog-analysis/agents/orchestrator")),
                      str(Path("/root/blog-analysis/agents/researcher")),
                      str(Path("/root/blog-analysis/agents/bsa"))]
-ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT)]
+ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT), str(Path("/root/obsidian-vault"))]
 ALLOWED_AGENTS = {"bsa": str(AGENTS_DIR / "bsa/bsa_agent.py"),
                   "pm": str(AGENTS_DIR / "orchestrator/pm_agent.py")}
 
