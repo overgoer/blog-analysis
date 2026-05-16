@@ -243,7 +243,7 @@ def rebuild_file(user_lines, known_tasks, discuss_lines=None, context_lines=None
 def detect_discussion_trigger(discuss_lines):
     """Check if user wrote a new message starting with ээ that BSA hasn't answered."""
     text = "\n".join(discuss_lines)
-    pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?)\*\*:\s*(.*)"
+    pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?):\*\*\s*(.*)"
     messages = re.findall(pattern, text)
     if not messages:
         return None
