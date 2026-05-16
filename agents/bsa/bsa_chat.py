@@ -281,7 +281,7 @@ def build_prompt():
 
 
 def run_conversation(messages):
-    for _ in range(8):
+    for _ in range(12):
         msg, text = call_deepseek(messages, tools=TOOLS)
         if msg is None:
             return f"Error: {text}", messages
