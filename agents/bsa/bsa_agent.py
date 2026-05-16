@@ -671,17 +671,17 @@ def run_weekly_audit(dry_run=False):
             email_body.append(f"  • {item}")
         email_body.append("")
     # Read backlog for current in-progress tasks
-    backlog_path = Path("/root/obsidian-vault/backlog.md")
+    kanban_path = Path("/root/obsidian-vault/eddytester/Оркестратор Доска.md")
     in_progress_tasks = []
-    if backlog_path.exists():
-        bcontent = backlog_path.read_text(encoding="utf-8")
-        in_work = False
+    if kanban_path.exists():
+        bcontent = kanban_path.read_text(encoding="utf-8")
+        in_work_section = False
         for line in bcontent.split("\n"):
-            if line.strip().startswith("## В работе"):
-                in_work = True
-            elif line.strip().startswith("## Готово"):
-                in_work = False
-            if in_work and line.strip().startswith("- ["):
+            if line.strip().startswith("##") and "done" not in line.strip().lower() and "готов" not in line.strip().lower() and "done" not in line.lower():
+                in_work_section = True
+            elif line.strip().startswith("##") and ("done" in line.strip().lower() or "готов" in line.strip().lower()):
+                in_work_section = False
+            if in_work_section and line.strip().startswith("- [") and not line.strip().startswith("- [x]"):
                 in_progress_tasks.append(line.strip())
     if in_progress_tasks:
         email_body.append("🔄 В работе (делегировано агентам):")

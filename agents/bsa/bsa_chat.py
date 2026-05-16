@@ -22,7 +22,6 @@ CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
-BACKLOG_FILE = Path("/root/obsidian-vault/backlog.md")
 LOG_FILE = Path("/root/blog-analysis/logs/bsa_chat.log")
 ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/obsidian-vault")),
@@ -172,48 +171,6 @@ def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
         return f"Email sent to {to}"
     except Exception as e: return f"Error: {e}"
 
-def update_backlog(tag, task_text, status="in_progress", detail=""):
-    """Add/update a task entry in backlog.md."""
-    backlog = BACKLOG_FILE
-    if not backlog.exists():
-        backlog.write_text("# Бэклог задач агентов\n\n## В работе\n\n## Готово\n", encoding="utf-8")
-
-    content = backlog.read_text(encoding="utf-8")
-    now = datetime.now().strftime("%d.%m %H:%M")
-
-    if status == "in_progress":
-        if task_text in content:
-            return "Already tracked"
-        entry = f"- [ ] {tag} {task_text} — взято BSA {now}"
-        content = content.replace("## В работе\n", "## В работе\n" + entry + "\n")
-
-    elif status in ("done", "failed"):
-        lines = content.split("\n")
-        new_lines = []
-        in_prog = False
-        removed = False
-        for line in lines:
-            if line.startswith("## В работе"):
-                in_prog = True
-            elif line.startswith("## Готово"):
-                in_prog = False
-            if in_prog and task_text in line and not removed:
-                removed = True
-                continue
-            new_lines.append(line)
-
-        emoji = "✅" if status == "done" else "❌"
-        entry = f"- [x] {tag} {task_text} — {emoji} {detail} {now}"
-        done_idx = next((i for i, l in enumerate(new_lines) if l.startswith("## Готово")), None)
-        if done_idx is not None:
-            new_lines.insert(done_idx + 1, entry)
-        else:
-            new_lines.append("\n## Готово\n" + entry)
-        content = "\n".join(new_lines)
-
-    backlog.write_text(content, encoding="utf-8")
-    return f"Backlog updated: {tag} {task_text} -> {status}"
-
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -246,22 +203,12 @@ TOOLS = [{"type": "function", "function": {
     "name": "send_email",
     "description": "Send email to eddy.super1@gmail.com",
     "parameters": {"type": "object", "properties": {"subject": {"type": "string"}, "body": {"type": "string"}, "to": {"type": "string"}}, "required": ["subject", "body"]}
-}}, {"type": "function", "function": {
-    "name": "update_backlog",
-    "description": "Add or update a task in the agent backlog board. Use when delegating to an agent or when a task completes.",
-    "parameters": {"type": "object", "properties": {
-        "tag": {"type": "string", "enum": ["#research", "#content", "#dev", "#pm"]},
-        "task_text": {"type": "string"},
-        "status": {"type": "string", "enum": ["in_progress", "done", "failed"]},
-        "detail": {"type": "string"}
-    }, "required": ["tag", "task_text", "status"]}
-}}]
+}}}]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file,
             "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
-            "update_backlog": update_backlog,
             "run_agent": tool_run_agent, "send_email": tool_send_email}
 
 
