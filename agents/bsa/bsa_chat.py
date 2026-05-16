@@ -29,7 +29,7 @@ ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/blog-analysis/agents/orchestrator")),
                      str(Path("/root/blog-analysis/agents/researcher")),
                      str(Path("/root/blog-analysis/agents/bsa"))]
-ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT)]
+ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT), str(Path("/root/obsidian-vault"))]
 ALLOWED_AGENTS = {"bsa": str(AGENTS_DIR / "bsa/bsa_agent.py"),
                   "pm": str(AGENTS_DIR / "orchestrator/pm_agent.py")}
 
@@ -171,6 +171,83 @@ def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
         return f"Email sent to {to}"
     except Exception as e: return f"Error: {e}"
 
+
+def tool_update_status(task_text, status="running", detail=""):
+    """Update task status in requests.md. Preserves user section and context section."""
+    try:
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        status_marker = "-----статус BSA-----"
+        context_marker = "-----контекст задач-----"
+
+        status_idx = content.find(status_marker)
+        if status_idx == -1:
+            return "Error: status section not found"
+
+        after_marker = content[status_idx + len(status_marker):]
+        context_idx = after_marker.find(context_marker)
+        existing_status = after_marker[:context_idx] if context_idx != -1 else after_marker
+        rest = after_marker[context_idx:] if context_idx != -1 else ""
+
+        # Parse existing status entries
+        known_tasks = {}
+        for line in existing_status.split("\n"):
+            ls = line.strip()
+            m = re.match(r"^([\u2705\U0001f504\u274c\u23f3])\s+(.+?)(?:\s*(?:\u2192|\u2014)\s*(.+))?$", ls)
+            if m:
+                emoji_map = {"\u2705": "done", "\U0001f504": "running", "\u274c": "failed", "\u23f3": "pending"}
+                txt = m.group(2).strip()
+                det = m.group(3).strip() if m.group(3) else ""
+                clean = re.sub(r"\s*\(\u0432\u0437\u044f\u0442\u043e \d+:\d+\)", "", txt).strip()
+                known_tasks[clean] = {"status": emoji_map.get(m.group(1), "running"), "detail": det, "taken_at": ""}
+
+        # Update/add the task
+        known_tasks[task_text] = {"status": status, "detail": detail, "taken_at": ""}
+
+        # Build new status block
+        lines = [status_marker, ""]
+        running = {k: v for k, v in known_tasks.items() if v["status"] in ("running", "pending")}
+        done = {k: v for k, v in known_tasks.items() if v["status"] == "done"}
+        # Dedup running vs done
+        for k in list(running):
+            if k in done:
+                del running[k]
+        if running:
+            lines.append("\u0412 \u0440\u0430\u0431\u043e\u0442\u0435:")
+            for text in running:
+                lines.append(f"\U0001f504 {text}")
+            lines.append("")
+        if done:
+            lines.append("\u0413\u043e\u0442\u043e\u0432\u043e:")
+            for text, info in done.items():
+                d = f" \u2192 {info['detail']}" if info.get('detail') else ""
+                lines.append(f"\u2705 {text}{d}")
+            lines.append("")
+        if not running and not done:
+            lines.append("(\u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447)")
+            lines.append("")
+
+        new_status = "\n".join(lines)
+        before = content[:status_idx]
+        REQUESTS_FILE.write_text(before + new_status + "\n" + rest, encoding="utf-8")
+        return f"Status updated: {task_text} \u2192 {status}"
+    except Exception as e:
+        log(f"update_status error: {e}")
+        return f"Error: {e}"
+
+
+def tool_shorten_task(old_text, new_text):
+    """Replace old task text with shorter version in requests.md."""
+    try:
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        if old_text not in content:
+            return f"Error: '{old_text}' not found"
+        content = content.replace(old_text, new_text)
+        REQUESTS_FILE.write_text(content, encoding="utf-8")
+        return f"Shortened: {old_text} \u2192 {new_text}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -203,9 +280,24 @@ TOOLS = [{"type": "function", "function": {
     "name": "send_email",
     "description": "Send email to eddy.super1@gmail.com",
     "parameters": {"type": "object", "properties": {"subject": {"type": "string"}, "body": {"type": "string"}, "to": {"type": "string"}}, "required": ["subject", "body"]}
-}}}]
+}}, {"type": "function", "function": {
+    "name": "update_status",
+    "description": "Update task status in requests.md status section. Use instead of write_file for status updates. Preserves other sections.",
+    "parameters": {"type": "object", "properties": {
+        "task_text": {"type": "string"},
+        "status": {"type": "string", "enum": ["done", "running", "pending", "failed"]},
+        "detail": {"type": "string"}
+    }, "required": ["task_text", "status"]}
+}}, {"type": "function", "function": {
+    "name": "shorten_task",
+    "description": "Shorten task text in requests.md. Use when the original task description is too long.",
+    "parameters": {"type": "object", "properties": {
+        "old_text": {"type": "string"},
+        "new_text": {"type": "string"}
+    }, "required": ["old_text", "new_text"]}
+}}]
 
-TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file,
+TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
             "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
