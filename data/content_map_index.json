@@ -1,0 +1,16 @@
+[
+  {
+    "date": "2026-05-17",
+    "title": "Testing file uploads: multipart forms, validation, size limits, security",
+    "angle": "",
+    "tags": [
+      "file-upload",
+      "zip-slip",
+      "security",
+      "testing",
+      "bugs"
+    ],
+    "summary": "Пост описывает уязвимость Zip Slip при загрузке архивов, методы её воспроизведения и меры защиты через проверку путей и удаление символических ссылок.",
+    "file_path": "/root/obsidian-vault/eddytester/Посты/2026-05-17_Testing file uploads_ multipart forms_ validation_ size limi.md"
+  }
+]

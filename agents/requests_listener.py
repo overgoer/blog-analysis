@@ -88,10 +88,11 @@ def find_tasks_in_text(text):
     return tasks
 
 def find_discussion_in_text(text):
+    """Find discussion lines starting with ээ and ending with !."""
     questions = []
     for line in text.split('\n'):
         stripped = line.strip()
-        if stripped.startswith('\u044d\u044d'):
+        if stripped.startswith('\u044d\u044d') and stripped.endswith('!'):
             questions.append(stripped)
     return questions
 

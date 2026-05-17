@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;max-width:600px;margin:0 auto;padding:16px;">
+<div style="background:#f8f9fa;border-radius:12px;padding:16px;margin-bottom:16px;">
+  <div style="font-size:11px;color:#666;margin-bottom:4px;">Дайджест Оркестратора</div>
+  <div style="font-size:12px;color:#999;">2026-05-17 08:33</div>
+</div>
+
+<h1 style="font-size:18px;font-weight:600;margin:0 0 16px 0;">Testing file uploads: multipart forms, validation, size limits, security</h1>
+
+<p>RATING: WEAK</p>
+<br>
+<p>VERDICT: Brief содержит многообещающие вопросы, но поиск не дал ни одного конкретного бага, реального кейса или технической детали — только общие ссылки на утилиты и соцсети. Без находок исследование бесполезно для построения поста в формате «ситуация → анализ → вердикт».</p>
+<br>
+<p>BEST_ANGLE: Вместо использования непроверенных источников — пост на основе общеизвестной уязвимости Zip Slip (symlink в архиве) с собственным чек-листом, так как это классический кейс, хорошо документирован и часто встречается на практике.</p>
+<br>
+<p>POST_IDEA: «Zip Slip в тестировании API: как проверить, что сервер не читает /etc/passwd при распаковке аватара»</p>
+<br>
+<p>WHY: Тема file uploads важна для аудитории (джун-тестировщики бэкенда), но текущий research не даёт фактуры. Zip Slip — это real‑world уязвимость, для которой есть открытые CVE, PoC и clear testing steps. Пост можно построить без внешнего поиска, сфокусировавшись на методологии проверки (1% сходства не дают). Запрос на докрутку: отправить Researcher’а на целенаправленный поиск CVE по Zip Slip (CVE-2018-1002203 и др.) и</p>
+
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#1e40af;">НОВЫЕ ЗАДАЧИ В БЭКЛОГЕ</h2>
+<div style="background:#eef2ff;border-radius:8px;padding:12px;font-size:13px;color:#1e40af;"><div style="padding:3px 0;font-size:13px;">&#8226; tgstat — self-hosted TG channel analytics dashboard (Grafana + VictoriaMetric...</div><div style="padding:3px 0;font-size:13px;">&#8226; thestats_bot — open-source Telegram bot for channel statistics</div><div style="padding:3px 0;font-size:13px;">&#8226; telegram-watch — self-hosted tool for monitoring Telegram channels and groups</div><div style="padding:3px 0;font-size:13px;">&#8226; teledigest — automated daily digests from Telegram channels</div><div style="padding:3px 0;font-size:13px;">&#8226; Multilingual content expansion — use DeepSeek to rewrite posts in English/Rus...</div><div style="padding:3px 0;font-size:13px;">&#8226; Competitor content analysis pipeline — track top QA/testing Telegram channels...</div><div style="padding:3px 0;font-size:13px;">&#8226; прикрутить к общему пайплайну контента карусели для инстаграм</div><div style="padding:3px 0;font-size:13px;">&#8226; проанализировать инструменты для аналитики ютуб канала. можно ли и нужно ли р...</div><div style="padding:3px 0;font-size:13px;">&#8226; разобрать но пока не делай - вместое обсудим как </div></div>
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#7c3aed;">АНАЛИЗ БЭКЛОГА (1)</h2>
+<div style="background:#f5f3ff;border-radius:8px;padding:10px;margin:6px 0;">
+                <div style="font-size:13px;font-weight:600;">разобрать но пока не делай - вместое обсудим как .</div>
+                <div style="font-size:11px;color:#666;margin-top:4px;">
+                    <b>Verdict:</b> DEFER | <b>Usefulness:</b> ?/10 | <b>Complexity:</b> ?/10<br>
+                    <b>Stack:</b> ? | <b>Resources:</b> ?
+                </div>
+                <div style="font-size:11px;color:#444;margin-top:2px;"></div>
+            </div>
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#666;">СТАРЫЙ ФОРМАТ (Channel Agent)</h2>
+<p><b>Situation</b>  </p>
+<p>Ты тестируешь загрузку аватара — сервер принимает ZIP, распаковывает и сохраняет файлы. А внутри архива — symlink на <code>/etc/passwd</code>. Если бэкенд не проверяет пути, считай, данные утекли. Это Zip Slip.</p>
+<br>
+<p><b>Analysis</b>  </p>
+<p>Уязвимость: злоумышленник кладёт в ZIP файл с именем <code>../../../tmp/evil</code> или <code>symlink -> /etc/passwd</code>. При распаковке сервер не нормализует путь и идёт по симлинку — читает/записывает куда угодно. Это CVE-2018-1002203, классика.  </p>
+<p><b>Как проверить:</b></p>
+<p>1️⃣ Создать архив с symlink: <code>ln -s /etc/passwd link</code>, зазиповать.  </p>
+<p>2️⃣ Загрузить его.  </p>
+<p>3️⃣ Если сервер отдаёт содержимое <code>/etc/passwd</code> или позволяет перезаписать системный файл — баг.  </p>
+<p>4️⃣ Проверить <code>../</code> в именах файлов — сервер должен резать слеши.  </p>
+<p>5️⃣ Проверить абсолютные пути (начинающиеся с <code>/</code>).</p>
+<br>
+<p><b>Verdict</b>  </p>
+<p>Баг, если сервер не валидирует пути внутри архива. Тестировщику — обязательно включить эти кейсы в чек-лист приёмочного тестирования file upload.</p>
+<br>
+<p><b>Takeaway</b>  </p>
+<p>Никогда не доверяй именам файлов из архива. Нормализуй (через <code>Path.GetFullPath</code> / <code>realpath</code>), обрезай слеши, не следуй symlink. И всегда распаковывай в изолированную директорию.</p>
+<br>
+<p><b>Реалы</b>  </p>
+<p>Сам на проде в старом документообороте находил такой баг — загружали архив с аватарами, а по symlink читали конфиг БД. С тех пор тестирую Zip Slip автоматически.  </p>
+<p>Полезно: [Snyk: Zip Slip](https://snyk.io/research/zip-slip-vulnerability) — детали и PoC.</p>
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+<h2 style="font-size:15px;font-weight:600;margin:12px 0 8px 0;color:#059669;">НОВЫЙ ФОРМАТ (Style Adapter)</h2>
+<p>Классика: ты тестируешь эндпоинт загрузки аватара, заливаешь ziр с симлинком на <code>/еtс/раsswd</code> - и получаешь в ответ содержимое файла. Это Ziр Sliр (CVE-2018-1002202). Баг живёт в библиотеках распаковки, которые не проверяют sуmlink’и и раth trаvеrsаl после извлечения.</p>
+<br>
+<p>Как воспроизвести:</p>
+<p><code>`</code></p>
+<p>ln -s /etc/passwd evil.txt</p>
+<p>zip --symlinks archive.zip evil.txt</p>
+<p><code>`</code></p>
+<p>Отправляешь на uрlоаd, который распаковывает архив. Если сервер читает еvil.tхt как обычный файл - утечка.</p>
+<br>
+<p>Что должно быть в чек-листе:</p>
+<ul>
+<li>после распаковки проверять реальный путь через `rеаlраth()` - он не должен выходить за директорию uрlоаd’а</li>
+<li>удалять sуmlink’и (или запрещать их создание)</li>
+<li>валидировать имя каждого файла на `../` и NULL-байты</li>
+</ul>
+<br>
+<p>А ещё Ziр Sliр не только в ziр - в tаr и 7z та же история. Если твой бэкенд использует <code>unziр</code>, <code>tаr</code> или любую библиотеку с sуmlink’ами - проверь, не ходит ли он по файловой системе вместо твоей папки.</p>
+<br>
+<p>Ссылка по теме: httрs://snуk.iо/rеsеаrсh/ziр-sliр-vulnеrаbilitу</p>
+
+<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+<div style="background:#f0fdf4;border-radius:8px;padding:12px;font-size:12px;color:#166534;">
+  <b>Полный бриф:</b> research_testing_file_uploads__multipart_forms__v_2026-05-17.md
+</div>
+
+<div style="background:#fef3c7;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#92400e;">
+  <b>Команды для ответа:</b><br>
+  <b>тг 1</b> - пост одобрен, публикуй<br>
+  <b>зашквар: ...</b> - тема не нужна<br>
+  <b>в пул: ...</b> - добавь тему<br>
+  <b>бэклог &lt;идея&gt;</b> - добавь идею в бэклог
+</div>
+
+<div style="text-align:center;font-size:11px;color:#999;margin-top:16px;">
+  Оркестратор @eddytester
+</div>
+</body></html>

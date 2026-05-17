@@ -22,9 +22,6 @@ CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
-INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
-OUTBOX_FILE = Path("/root/obsidian-vault/outbox.md")
-VAULT_DIR = Path("/root/obsidian-vault")
 LOG_FILE = Path("/root/blog-analysis/logs/bsa_chat.log")
 ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/obsidian-vault")),
@@ -176,75 +173,129 @@ def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
 
 
 def tool_update_status(task_text, status="running", detail=""):
-    """Update task status. Writes to outbox.md as a Bizzy status message."""
+    """Update task status in requests.md. Preserves user section and context section."""
     try:
-        emoji = {"done": "\u2705", "running": "\U0001f504", "failed": "\u274c", "pending": "\u23f3"}
-        e = emoji.get(status, "\U0001f504")
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        d = f" \u2192 {detail}" if detail else ""
-        entry = "\n---\n\n**\u0422\u044b:** \u0437\u0430\u0434\u0430\u0447\u0430: " + task_text + "\n\n**Bizzy:** " + e + " " + task_text + d + " (" + now + ")\n"
-        with open(str(OUTBOX_FILE), "a") as f:
-            f.write(entry)
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
-        if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + now], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
-        return "Status written to outbox.md: " + task_text + " \u2192 " + status
-    except Exception as e:
-        log("update_status error: " + str(e))
-        return "Error: " + str(e)
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        status_marker = "-----статус BSA-----"
+        context_marker = "-----контекст задач-----"
 
-def tool_shorten_task(old_text, new_text):
-    """Replace old task text with shorter version."""
-    try:
-        content = INBOX_FILE.read_text(encoding="utf-8") if INBOX_FILE.exists() else ""
-        if old_text not in content:
-            return "Note: '" + old_text + "' not found in inbox (may already be processed)"
-        content = content.replace(old_text, new_text)
-        INBOX_FILE.write_text(content, encoding="utf-8")
-        return "Shortened: " + old_text + " \u2192 " + new_text
-    except Exception as e:
-        return "Error: " + str(e)
+        status_idx = content.find(status_marker)
+        if status_idx == -1:
+            return "Error: status section not found"
 
-def tool_discuss_reply(response_text):
-    """Append BSA response to outbox.md with **\u0422\u044b:** / **Bizzy:** format + git commit+push.
-    Auto-detects \u044d\u044d\u044d (new thread) and adds visual separator."""
-    try:
-        last_question = ""
-        is_new_tread = False
+        after_marker = content[status_idx + len(status_marker):]
+        context_idx = after_marker.find(context_marker)
+        existing_status = after_marker[:context_idx] if context_idx != -1 else after_marker
+        rest = after_marker[context_idx:] if context_idx != -1 else ""
+
+        # Parse existing status entries
+        known_tasks = {}
+        for line in existing_status.split("\n"):
+            ls = line.strip()
+            m = re.match(r"^([\u2705\U0001f504\u274c\u23f3])\s+(.+?)(?:\s*(?:\u2192)\s*(.+))?$", ls)
+            if m:
+                emoji_map = {"\u2705": "done", "\U0001f504": "running", "\u274c": "failed", "\u23f3": "pending"}
+                txt = m.group(2).strip()
+                det = m.group(3).strip() if m.group(3) else ""
+                clean = re.sub(r"\s*\(\u0432\u0437\u044f\u0442\u043e \d+:\d+\)", "", txt).strip()
+                known_tasks[clean] = {"status": emoji_map.get(m.group(1), "running"), "detail": det, "taken_at": ""}
+
+        # Update/add the task
+        known_tasks[task_text] = {"status": status, "detail": detail, "taken_at": ""}
+
+        # Build new status block
+        lines = [status_marker, ""]
+        running = {k: v for k, v in known_tasks.items() if v["status"] in ("running", "pending")}
+        done = {k: v for k, v in known_tasks.items() if v["status"] == "done"}
+        # Dedup running vs done
+        for k in list(running):
+            if k in done:
+                del running[k]
+        # Safety: remove running entries not matching current user tasks
+        # (handles BSA task shortening leaving stale keys)
         try:
-            inbox = INBOX_FILE.read_text(encoding="utf-8")
-            for line in reversed(inbox.split("\n")):
-                stripped = line.strip()
-                if stripped.startswith("\u044d\u044d") and stripped.endswith("!"):
-                    last_question = stripped
-                    is_new_tread = stripped.startswith("\u044d\u044d\u044d")
-                    break
+            user_sec = content.split("-----задачи к BSA-----")[1].split("-----статус BSA-----")[0]
+            user_tasks = set()
+            for line in user_sec.split(chr(10)):
+                line = line.strip().rstrip("!").strip()
+                if line and not line.startswith("-"):
+                    user_tasks.add(line)
+            if user_tasks:
+                stale = [k for k in running if k not in user_tasks]
+                for k in stale:
+                    del running[k]
         except Exception:
             pass
-        
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        sep = "\n--- * * * ---\n" if is_new_tread else ""
-        if last_question:
-            entry = sep + "\n---\n\n**\u0422\u044b:** " + last_question.rstrip("!") + "\n\n**Bizzy:** " + response_text + "\n"
-        else:
-            entry = sep + "\n---\n\n**Bizzy:** " + response_text + "\n"
-        
-        with open(str(OUTBOX_FILE), "a") as f:
-            f.write(entry)
-        
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
-        if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: response " + ts], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
-        return "\u2705 Response written to outbox.md (" + str(len(response_text)) + " chars)"
+        if running:
+            lines.append("\u0412 \u0440\u0430\u0431\u043e\u0442\u0435:")
+            for text in running:
+                lines.append(f"\U0001f504 {text}")
+            lines.append("")
+        if done:
+            lines.append("\u0413\u043e\u0442\u043e\u0432\u043e:")
+            for text, info in done.items():
+                d = f" \u2192 {info['detail']}" if info.get('detail') else ""
+                lines.append(f"\u2705 {text}{d}")
+            lines.append("")
+        if not running and not done:
+            lines.append("(\u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447)")
+            lines.append("")
+
+        new_status = "\n".join(lines)
+        before = content[:status_idx]
+        REQUESTS_FILE.write_text(before + new_status + "\n" + rest, encoding="utf-8")
+        # Write BSA_LOG.md entry when task is done
+        if status == "done" and detail:
+            try:
+                log_path = VAULT.parent / "BSA_LOG.md"
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                entry = f"- {now} \u2705 {task_text} \u2192 {detail}\n"
+                with open(str(log_path), "a") as lf:
+                    lf.write(entry)
+            except Exception:
+                pass
+        return f"Status updated: {task_text} \u2192 {status}"
     except Exception as e:
-        log("discuss_reply error: " + str(e))
-        return "Error: " + str(e)
+        log(f"update_status error: {e}")
+        return f"Error: {e}"
+
+
+def tool_shorten_task(old_text, new_text):
+    """Replace old task text with shorter version in requests.md."""
+    try:
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        if old_text not in content:
+            return f"Error: '{old_text}' not found"
+        content = content.replace(old_text, new_text)
+        REQUESTS_FILE.write_text(content, encoding="utf-8")
+        return f"Shortened: {old_text} \u2192 {new_text}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def tool_discuss_reply(response_text):
+    """Append BSA response to -----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f----- section in requests.md."""
+    try:
+        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        discuss_marker = "-----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f-----"
+        context_marker = "-----\u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u0437\u0430\u0434\u0430\u0447-----"
+        if discuss_marker not in content:
+            return "Error: discussion section not found"
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        reply = f"\n{ts} **BSA:** {response_text}"
+        discuss_idx = content.index(discuss_marker) + len(discuss_marker)
+        after = content[discuss_idx:]
+        context_idx = after.find(context_marker) if context_marker in after else -1
+        if context_idx != -1:
+            new_content = content[:discuss_idx] + after[:context_idx] + reply + "\n" + after[context_idx:]
+        else:
+            new_content = content + reply + "\n"
+        REQUESTS_FILE.write_text(new_content, encoding="utf-8")
+        return f"\u2705 Response written ({len(response_text)} chars)"
+    except Exception as e:
+        log(f"discuss_reply error: {e}")
+        return f"Error: {e}"
+
 
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
@@ -340,7 +391,7 @@ def run_conversation(messages):
 
 
 def trigger_mode():
-    """One-shot BSA session: read inbox.md, decide, delegate, write to outbox.md."""
+    """One-shot BSA session: read requests.md, decide, delegate, update status."""
     if not load_key():
         log("ERROR: No API key in trigger mode")
         print("ERROR: DeepSeek API key not found", file=sys.stderr)
@@ -374,9 +425,9 @@ def trigger_mode():
     messages = [
         {"role": "system", "content": full_prompt},
         {"role": "user", "content": (
-            "Новое сообщение в inbox.md. "
+            "Новое сообщение в requests.md. "
             "Прочитай файл, пойми что нужно, прими решение и действуй. "
-            "После завершения пиши ответы в outbox.md.")}
+            "После завершения обнови статус в requests.md.")}
     ]
 
     # Run conversation (max 8 iterations)
@@ -389,105 +440,54 @@ def trigger_mode():
         log("BSA trigger: completed (tool calls only)")
         print("BSA trigger: completed")
 
-    # Auto-commit outbox.md changes if BSA wrote via write_file
-    try:
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
-        if r.returncode != 0:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: auto-commit " + now], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
-    except Exception as e:
-        log("auto-commit error: " + str(e))
-
     log("BSA trigger mode completed")
 
+
 def discuss_mode(question):
-    """BSA discussion mode: answer user question, write to outbox.md.
-    ээ = continue thread (pass history from outbox.md)
-    эээ = new thread (fresh context, skip idempotency)"""
+    """BSA discussion mode: answer user question and write reply."""
     if not load_key():
         log("ERROR: No API key in discuss mode")
         sys.exit(1)
     log("BSA discuss mode started")
 
-    is_new_tread = question.strip().startswith("\u044d\u044d\u044d")
-    
-    # Idempotency: skip for new threads (\u044d\u044d\u044d)
-    if not is_new_tread:
-        try:
-            if INBOX_FILE.exists():
-                inbox = INBOX_FILE.read_text(encoding="utf-8")
-                last_inbox_question = ""
-                for line in reversed(inbox.split("\n")):
-                    stripped = line.strip()
-                    if stripped.startswith("\u044d\u044d") and stripped.endswith("!"):
-                        last_inbox_question = stripped
-                        break
-
-                if last_inbox_question and OUTBOX_FILE.exists():
-                    outbox = OUTBOX_FILE.read_text(encoding="utf-8")
-                    last_outbox_question = ""
-                    for line in reversed(outbox.split("\n")):
-                        if line.strip().startswith("**\u0422\u044b:**"):
-                            parts = line.split("**\u0422\u044b:**", 1)
-                            if len(parts) > 1:
-                                last_outbox_question = parts[1].strip()
-                            break
-
-                    if last_inbox_question and last_outbox_question:
-                        import unicodedata
-                        n_in = unicodedata.normalize("NFC", last_inbox_question.strip())
-                        n_out = unicodedata.normalize("NFC", last_outbox_question.strip())
-                        if n_in == n_out:
-                            log("Idempotency: last question already answered in outbox.md, skipping")
-                            print("Already answered in outbox.md, skipping")
-                            return
-        except Exception as e:
-            log("Idempotency check failed (non-critical): " + str(e))
-
-    # For continue thread (\u044d\u044d): add history from outbox.md
-    if not is_new_tread:
-        try:
-            if OUTBOX_FILE.exists():
-                outbox_history = OUTBOX_FILE.read_text(encoding="utf-8").strip()
-                if outbox_history:
-                    history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435."
-                    discuss_prompt_text += history_note
-        except Exception as e:
-            log("History read failed (non-critical): " + str(e))
-
     discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
-    discuss_prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+    prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
 
     messages = [
-        {"role": "system", "content": discuss_prompt_text},
+        {"role": "system", "content": prompt_text},
         {"role": "user", "content": question}
     ]
 
-    resp, messages = run_conversation(messages)
+    resp, _ = run_conversation(messages)
     if resp:
-        log("BSA discuss response: " + resp[:300] + "...")
-        # Check if BSA already called discuss_reply tool during conversation
-        bsa_used_tool = any(
-            msg.get("role") == "assistant" and 
-            any(tc["function"]["name"] == "discuss_reply" for tc in msg.get("tool_calls", []))
-            for msg in messages
-        )
-        if not bsa_used_tool:
-            try:
-                tool_discuss_reply(resp)
-                log("Response written to outbox.md (auto-fallback)")
-            except Exception as e:
-                log("Write to outbox.md failed: " + str(e))
-        else:
-            log("BSA already used discuss_reply tool, skipping auto-write")
+        log(f"BSA discuss response: {resp[:300]}...")
+        # Auto-write response if BSA did not reply to last question
+        try:
+            import re
+            content = REQUESTS_FILE.read_text(encoding="utf-8")
+            discuss_marker = "-----дискуссия-----"
+            if discuss_marker in content:
+                sec = content.split(discuss_marker)[-1].split("-----контекст")[0]
+                msgs = re.findall(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?):\*\*\s*(.*)", sec)
+                needs_reply = True
+                if msgs:
+                    for i in range(len(msgs)-1, -1, -1):
+                        ts, author, text = msgs[i]
+                        if author == "Эдди" and text.strip().startswith("ээ"):
+                            has_bsa = any(m[1] == "BSA" for m in msgs[i+1:])
+                            needs_reply = not has_bsa
+                            break
+                if needs_reply:
+                    tool_discuss_reply(resp)
+                    log("Auto-wrote response via discuss_reply fallback")
+        except Exception as e:
+            log(f"Auto-write failed: {e}")
         print(resp)
     else:
         log("BSA discuss: completed (tool calls only)")
         print("BSA discuss: completed")
     log("BSA discuss mode completed")
+
 
 def main():
     # Handle --mode trigger
