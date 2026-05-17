@@ -185,7 +185,7 @@ def tool_update_status(task_text, status="running", detail=""):
         entry = "\n---\n\n**\u0422\u044b:** \u0437\u0430\u0434\u0430\u0447\u0430: " + task_text + "\n\n**Bizzy:** " + e + " " + task_text + d + " (" + now + ")\n"
         with open(str(OUTBOX_FILE), "a") as f:
             f.write(entry)
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
         r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
         if r.returncode != 0:
             subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + now], capture_output=True, timeout=15)
@@ -235,7 +235,7 @@ def tool_discuss_reply(response_text):
         with open(str(OUTBOX_FILE), "a") as f:
             f.write(entry)
         
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
         r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
         if r.returncode != 0:
             subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: response " + ts], capture_output=True, timeout=15)
@@ -391,7 +391,7 @@ def trigger_mode():
 
     # Auto-commit outbox.md changes if BSA wrote via write_file
     try:
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "outbox.md"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
         r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
         if r.returncode != 0:
             now = datetime.now().strftime("%Y-%m-%d %H:%M")

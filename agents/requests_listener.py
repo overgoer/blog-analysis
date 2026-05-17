@@ -55,8 +55,16 @@ def release_lock():
         pass
 
 def git_pull():
+    # Auto-commit any dirty files before pulling (Bizzy may have written via write_file)
+    try:
+        subprocess.run(['git', '-C', str(VAULT_DIR), 'add', '-A'], capture_output=True, timeout=15)
+        r = subprocess.run(['git', '-C', str(VAULT_DIR), 'diff', '--cached', '--quiet'], capture_output=True, timeout=15)
+        if r.returncode != 0:
+            subprocess.run(['git', '-C', str(VAULT_DIR), 'commit', '-m', 'auto-save before pull'], capture_output=True, timeout=15)
+    except Exception:
+        pass
     r = subprocess.run(
-        ['git', '-C', str(VAULT_DIR), 'pull', '--ff-only'],
+        ['git', '-C', str(VAULT_DIR), 'pull', '--rebase'],
         capture_output=True, text=True, timeout=30,
     )
     if r.returncode != 0:
