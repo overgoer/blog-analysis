@@ -58,7 +58,7 @@ def call_deepseek(messages, tools=None):
     key = load_key()
     if not key: return None, "No API key"
     payload = {"model": "deepseek-v4-flash", "messages": messages,
-               "temperature": 0.5, "max_tokens": 4096}
+               "temperature": 0.5, "max_tokens": 16384}
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
@@ -319,7 +319,7 @@ def build_prompt():
 
 
 def run_conversation(messages):
-    for _ in range(12):
+    for _ in range(40):
         msg, text = call_deepseek(messages, tools=TOOLS)
         if msg is None:
             return f"Error: {text}", messages
@@ -379,7 +379,7 @@ def trigger_mode():
             "После завершения пиши ответы в outbox.md.")}
     ]
 
-    # Run conversation (max 8 iterations)
+    # Run conversation (max 40 iterations)
     resp, _ = run_conversation(messages)
 
     if resp:
