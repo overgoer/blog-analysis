@@ -209,24 +209,28 @@ def tool_shorten_task(old_text, new_text):
         return "Error: " + str(e)
 
 def tool_discuss_reply(response_text):
-    """Append BSA response to outbox.md with **\u0422\u044b:** / **Bizzy:** format + git commit+push."""
+    """Append BSA response to outbox.md with **\u0422\u044b:** / **Bizzy:** format + git commit+push.
+    Auto-detects \u044d\u044d\u044d (new thread) and adds visual separator."""
     try:
         last_question = ""
+        is_new_tread = False
         try:
             inbox = INBOX_FILE.read_text(encoding="utf-8")
             for line in reversed(inbox.split("\n")):
                 stripped = line.strip()
                 if stripped.startswith("\u044d\u044d"):
                     last_question = stripped
+                    is_new_tread = stripped.startswith("\u044d\u044d\u044d")
                     break
         except Exception:
             pass
         
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        sep = "\n--- * * * ---\n" if is_new_tread else ""
         if last_question:
-            entry = "\n---\n\n**\u0422\u044b:** " + last_question + "\n\n**Bizzy:** " + response_text + "\n"
+            entry = sep + "\n---\n\n**\u0422\u044b:** " + last_question + "\n\n**Bizzy:** " + response_text + "\n"
         else:
-            entry = "\n---\n\n**Bizzy:** " + response_text + "\n"
+            entry = sep + "\n---\n\n**Bizzy:** " + response_text + "\n"
         
         with open(str(OUTBOX_FILE), "a") as f:
             f.write(entry)
@@ -400,48 +404,65 @@ def trigger_mode():
     log("BSA trigger mode completed")
 
 def discuss_mode(question):
-    """BSA discussion mode: answer user question, write to outbox.md."""
+    """BSA discussion mode: answer user question, write to outbox.md.
+    ээ = continue thread (pass history from outbox.md)
+    эээ = new thread (fresh context, skip idempotency)"""
     if not load_key():
         log("ERROR: No API key in discuss mode")
         sys.exit(1)
     log("BSA discuss mode started")
 
-    try:
-        if INBOX_FILE.exists():
-            inbox = INBOX_FILE.read_text(encoding="utf-8")
-            last_inbox_question = ""
-            for line in reversed(inbox.split("\n")):
-                stripped = line.strip()
-                if stripped.startswith("\u044d\u044d"):
-                    last_inbox_question = stripped
-                    break
-
-            if last_inbox_question and OUTBOX_FILE.exists():
-                outbox = OUTBOX_FILE.read_text(encoding="utf-8")
-                last_outbox_question = ""
-                for line in reversed(outbox.split("\n")):
-                    if line.strip().startswith("**\u0422\u044b:**"):
-                        parts = line.split("**\u0422\u044b:**", 1)
-                        if len(parts) > 1:
-                            last_outbox_question = parts[1].strip()
+    is_new_tread = question.strip().startswith("\u044d\u044d\u044d")
+    
+    # Idempotency: skip for new threads (\u044d\u044d\u044d)
+    if not is_new_tread:
+        try:
+            if INBOX_FILE.exists():
+                inbox = INBOX_FILE.read_text(encoding="utf-8")
+                last_inbox_question = ""
+                for line in reversed(inbox.split("\n")):
+                    stripped = line.strip()
+                    if stripped.startswith("\u044d\u044d"):
+                        last_inbox_question = stripped
                         break
 
-                if last_inbox_question and last_outbox_question:
-                    import unicodedata
-                    n_in = unicodedata.normalize("NFC", last_inbox_question.strip())
-                    n_out = unicodedata.normalize("NFC", last_outbox_question.strip())
-                    if n_in == n_out:
-                        log("Idempotency: last question already answered in outbox.md, skipping")
-                        print("Already answered in outbox.md, skipping")
-                        return
-    except Exception as e:
-        log("Idempotency check failed (non-critical): " + str(e))
+                if last_inbox_question and OUTBOX_FILE.exists():
+                    outbox = OUTBOX_FILE.read_text(encoding="utf-8")
+                    last_outbox_question = ""
+                    for line in reversed(outbox.split("\n")):
+                        if line.strip().startswith("**\u0422\u044b:**"):
+                            parts = line.split("**\u0422\u044b:**", 1)
+                            if len(parts) > 1:
+                                last_outbox_question = parts[1].strip()
+                            break
+
+                    if last_inbox_question and last_outbox_question:
+                        import unicodedata
+                        n_in = unicodedata.normalize("NFC", last_inbox_question.strip())
+                        n_out = unicodedata.normalize("NFC", last_outbox_question.strip())
+                        if n_in == n_out:
+                            log("Idempotency: last question already answered in outbox.md, skipping")
+                            print("Already answered in outbox.md, skipping")
+                            return
+        except Exception as e:
+            log("Idempotency check failed (non-critical): " + str(e))
+
+    # For continue thread (\u044d\u044d): add history from outbox.md
+    if not is_new_tread:
+        try:
+            if OUTBOX_FILE.exists():
+                outbox_history = OUTBOX_FILE.read_text(encoding="utf-8").strip()
+                if outbox_history:
+                    history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435."
+                    discuss_prompt_text += history_note
+        except Exception as e:
+            log("History read failed (non-critical): " + str(e))
 
     discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
-    prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+    discuss_prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
 
     messages = [
-        {"role": "system", "content": prompt_text},
+        {"role": "system", "content": discuss_prompt_text},
         {"role": "user", "content": question}
     ]
 
