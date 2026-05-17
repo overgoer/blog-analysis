@@ -371,11 +371,15 @@ def trigger_mode():
 
     full_prompt = prompt_text + "\n".join(extra)
 
+    # Pre-read inbox.md so BSA doesn't need read_file tool for it
+    inbox_content = INBOX_FILE.read_text(encoding="utf-8") if INBOX_FILE.exists() else "File not found"
+
     messages = [
         {"role": "system", "content": full_prompt},
         {"role": "user", "content": (
-            "Новое сообщение в inbox.md. "
-            "Прочитай файл, пойми что нужно, прими решение и действуй. "
+            "Вот текущее содержимое inbox.md:\n\n"
+            + inbox_content +
+            "\n\nПроанализируй, прими решение и действуй. "
             "После завершения пиши ответы в outbox.md.")}
     ]
 
