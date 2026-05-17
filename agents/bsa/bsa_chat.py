@@ -445,14 +445,23 @@ def discuss_mode(question):
         {"role": "user", "content": question}
     ]
 
-    resp, _ = run_conversation(messages)
+    resp, messages = run_conversation(messages)
     if resp:
         log("BSA discuss response: " + resp[:300] + "...")
-        try:
-            tool_discuss_reply(resp)
-            log("Response written to outbox.md")
-        except Exception as e:
-            log("Write to outbox.md failed: " + str(e))
+        # Check if BSA already called discuss_reply tool during conversation
+        bsa_used_tool = any(
+            msg.get("role") == "assistant" and 
+            any(tc["function"]["name"] == "discuss_reply" for tc in msg.get("tool_calls", []))
+            for msg in messages
+        )
+        if not bsa_used_tool:
+            try:
+                tool_discuss_reply(resp)
+                log("Response written to outbox.md (auto-fallback)")
+            except Exception as e:
+                log("Write to outbox.md failed: " + str(e))
+        else:
+            log("BSA already used discuss_reply tool, skipping auto-write")
         print(resp)
     else:
         log("BSA discuss: completed (tool calls only)")
