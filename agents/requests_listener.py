@@ -1,16 +1,15 @@
-#!/usr/bin/env python3
 """
-requests_listener.py v2 — дверной звонок для BSA.
-
-Читает requests.md, находит новые ! задачи,
-отмечает их как ⏳ и будит BSA (bsa_chat.py --mode trigger).
-
-Ничего не классифицирует, не запускает агентов.
-Всё решение — за BSA.
-
-После BSA — мержит статус, чтобы не потерять записи.
+requests_listener.py v3 -- dvernoj zvonok dlya BSA (inbox.md -> outbox.md).
+Chitaet /root/obsidian-vault/inbox.md, nahodit novye ! zadachi
+i ee-diskussiyu, budit BSA (bsa_chat.py).
+Principy:
+- Hash-based detekciya: esli inbox.md ne izmenilsya -- nichego ne delaem.
+- Ne pishem NICHEGO v vault (nikakih timestampov, statusov, markerov).
+- Ne commitim i ne pushim -- tolko chitaem.
+- Working tree vsegda chistaya.
 """
 
+import hashlib
 import os
 import re
 import subprocess
@@ -18,27 +17,25 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# -- Config --
-REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
-VAULT_DIR = Path("/root/obsidian-vault")
-LOCK_FILE = Path("/tmp/requests_listener.lock")
-LOG_FILE = Path("/tmp/requests_listener.log")
-AGENTS_DIR = Path("/root/blog-analysis/agents")
-BSA_TRIGGER = AGENTS_DIR / "bsa" / "bsa_chat.py"
-
+INBOX_FILE = Path('/root/obsidian-vault/inbox.md')
+VAULT_DIR = Path('/root/obsidian-vault')
+HASH_FILE = '/tmp/.inbox_last_hash'
+LOCK_FILE = Path('/tmp/requests_listener.lock')
+LOG_FILE = Path('/tmp/requests_listener.log')
+AGENTS_DIR = Path('/root/blog-analysis/agents')
+BSA_CHAT = AGENTS_DIR / 'bsa' / 'bsa_chat.py'
 
 def log(msg):
-    ts = datetime.now().strftime("%H:%M:%S")
-    line = f"[{ts}] {msg}"
+    ts = datetime.now().strftime('%H:%M:%S')
+    line = f'[{ts}] {msg}'
     print(line)
-    with open(LOG_FILE, "a") as f:
-        f.write(line + "\n")
-
+    with open(LOG_FILE, 'a') as f:
+        f.write(line + '\n')
 
 def acquire_lock():
     try:
         import fcntl
-        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR)
+        fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_RDWR)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             os.ftruncate(fd, 0)
@@ -51,229 +48,57 @@ def acquire_lock():
     except ImportError:
         return True
 
-
 def release_lock():
     try:
-        os.unlink(LOCK_FILE)
+        os.unlink(str(LOCK_FILE))
     except FileNotFoundError:
         pass
 
-
 def git_pull():
-    subprocess.run(
-        ["git", "-C", str(VAULT_DIR), "pull", "origin", "main", "--ff-only"],
-        capture_output=True, timeout=30,
-    )
-
-
-def git_commit_push():
-    subprocess.run(
-        ["git", "-C", str(VAULT_DIR), "add", "-A"],
-        capture_output=True, timeout=30,
-    )
     r = subprocess.run(
-        ["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"],
-        capture_output=True, timeout=30,
+        ['git', '-C', str(VAULT_DIR), 'pull', '--ff-only'],
+        capture_output=True, text=True, timeout=30,
     )
     if r.returncode != 0:
-        msg = f"sync: requests_listener {datetime.now().strftime('%Y-%m-%d_%H:%M')}"
-        subprocess.run(
-            ["git", "-C", str(VAULT_DIR), "commit", "-m", msg],
-            capture_output=True, timeout=30,
-        )
-        subprocess.run(
-            ["git", "-C", str(VAULT_DIR), "push", "origin", "main"],
-            capture_output=True, timeout=30,
-        )
-        return True
-    return False
+        log(f'git pull failed: {r.stderr[:200]}')
+        return False
+    return True
 
+def read_hash():
+    try:
+        with open(HASH_FILE) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ''
 
-def now_str():
-    return datetime.now().strftime("%H:%M")
+def write_hash(h):
+    with open(HASH_FILE, 'w') as f:
+        f.write(h)
 
-
-# -- requests.md parsing --
-
-
-def split_sections(text):
-    status_marker = "-----статус"
-    discuss_marker = "-----дискуссия"
-    context_marker = "-----контекст"
-    lines = text.split("\n")
-    status_start = None
-    discuss_start = None
-    context_start = None
-    for i, line in enumerate(lines):
-        lo = line.lower().strip()
-        if status_marker in lo and status_start is None:
-            status_start = i
-        if discuss_marker in lo and discuss_start is None:
-            discuss_start = i
-        if context_marker in lo and context_start is None:
-            context_start = i
-
-    has_status = status_start is not None
-    user_lines = lines[:status_start] if status_start is not None else lines
-
-    if status_start is not None:
-        se = discuss_start if discuss_start is not None else (context_start if context_start is not None else len(lines))
-        status_lines = lines[status_start:se]
-    else:
-        status_lines = []
-
-    if discuss_start is not None:
-        de = context_start if context_start is not None else len(lines)
-        discuss_lines = lines[discuss_start:de]
-    else:
-        discuss_lines = []
-
-    context_lines = lines[context_start:] if context_start is not None else []
-    return user_lines, status_lines, discuss_lines, context_lines, has_status
-
-
-def find_tasks_in_user_section(user_lines):
+def find_tasks_in_text(text):
     tasks = []
-    full_text = "\n".join(user_lines)
-    lines = full_text.split("\n")
-    for line in lines:
+    for line in text.split('\n'):
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.endswith("!"):
-            task_text = stripped.rstrip("!").strip()
-            task_text = re.sub(r"\s+", " ", task_text)
-            tasks.append({"text": task_text, "raw": stripped})
+        if stripped.endswith('!'):
+            task_text = stripped.rstrip('!').strip()
+            task_text = re.sub(r'\s+', ' ', task_text)
+            tasks.append(task_text)
     return tasks
 
-
-def parse_status_section(status_lines):
-    """Parse status section entries into dict."""
-    known = {}
-    for line in status_lines:
-        ls = line.strip()
-        m = re.match(r"^([✅🔄❌⏳])\s+(.+?)(?:\s*→\s*(.+))?$", ls)
-        if m:
-            emoji = m.group(1)
-            raw_text = m.group(2).strip()
-            detail = m.group(3).strip() if m.group(3) else ""
-            taken_match = re.search(r"\(взято (\d+:\d+)\)", raw_text)
-            taken_at = taken_match.group(1) if taken_match else None
-            clean_text = re.sub(r"\s*\(взято \d+:\d+\)", "", raw_text).strip()
-            status_map = {"✅": "done", "🔄": "running", "❌": "failed", "⏳": "pending"}
-            known[clean_text] = {
-                "status": status_map.get(emoji, "pending"),
-                "detail": detail,
-                "taken_at": taken_at,
-            }
-    return known
-
-
-def build_status_block(known_tasks):
-    lines = []
-    lines.append("-----статус BSA-----")
-    lines.append("")
-
-    running = {k: v for k, v in known_tasks.items()
-               if v["status"] in ("running", "pending")}
-    done = {k: v for k, v in known_tasks.items()
-            if v["status"] == "done"}
-
-    # Dedup: exclude from running any task that is also done
-    dupes = [k for k in running if k in done]
-    if dupes:
-        for k in dupes:
-            del running[k]
-        log(f"  Deduped {len(dupes)} tasks from running section")
-
-    if running:
-        lines.append("В работе:")
-        for text, info in running.items():
-            taken = f" (взято {info['taken_at']})" if info.get('taken_at') else ""
-            lines.append(f"🔄 {text}{taken}")
-        lines.append("")
-    if done:
-        lines.append("Готово:")
-        for text, info in done.items():
-            detail = f" → {info['detail']}" if info.get('detail') else ""
-            lines.append(f"✅ {text}{detail}")
-        lines.append("")
-    if not running and not done:
-        lines.append("(нет активных задач)")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def rebuild_file(user_lines, known_tasks, discuss_lines=None, context_lines=None):
-    """Rebuild requests.md from user content and known tasks."""
-    # Safety: remove running entries not matching current user tasks
-    user_tasks = set()
-    for line in user_lines:
-        line = line.strip().rstrip("!").strip()
-        if line:
-            user_tasks.add(line)
-    if user_tasks:
-        stale = [k for k in list(known_tasks) if known_tasks[k].get("status") in ("running", "pending") and k not in user_tasks]
-        for k in stale:
-            del known_tasks[k]
-    status_block = build_status_block(known_tasks)
-    user_header = "-----задачи к BSA-----"
-    user_text = "\n".join(user_lines).strip()
-    user_text = re.sub(r"^-----.*$", "", user_text, flags=re.MULTILINE).strip()
-    full_text = user_header + "\n\n"
-    if user_text:
-        full_text += user_text + "\n\n"
-    full_text += status_block + "\n"
-    full_text += f"*последнее обновление: {datetime.now():%H:%M}*\n"
-    # Preserve discussion section if it exists
-    if discuss_lines:
-        discuss_text = "\n".join(discuss_lines).strip()
-        if discuss_text:
-            full_text += discuss_text + "\n\n"
-    # Preserve context section if it exists
-    if context_lines:
-        context_text = "\n".join(context_lines).strip()
-        if context_text:
-            full_text += context_text + "\n"
-    return full_text
-
-
-# -- main --
-
-def detect_discussion_trigger(discuss_lines):
-    """Check if user wrote a new message starting with ээ that BSA hasn't answered."""
-    text = "\n".join(discuss_lines)
-    pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?):\*\*\s*(.*)"
-    messages = re.findall(pattern, text)
-    if not messages:
-        return None
-    last_ts, last_author, last_text = messages[-1]
-    if last_author == "\u042d\u0434\u0434\u0438" and last_text.strip().startswith("\u044d\u044d"):
-        return last_text.strip()
-    return None
-
-
-def update_timestamp_in_file():
-    """Update the *последнее обновление* timestamp in requests.md."""
-    try:
-        text = REQUESTS_FILE.read_text(encoding="utf-8")
-        new_ts = f"*последнее обновление: {datetime.now():%H:%M}*"
-        import re
-        if re.search(r"\*последнее обновление: \d{2}:\d{2}\*", text):
-            text = re.sub(r"\*последнее обновление: \d{2}:\d{2}\*", new_ts, text)
-        else:
-            # No existing timestamp, add after status section
-            text = text.replace("-----контекст задач-----", new_ts + "\n\n-----контекст задач-----")
-        REQUESTS_FILE.write_text(text, encoding="utf-8")
-    except Exception as e:
-        log(f"update_timestamp error: {e}")
-
-# -- main --
+def find_discussion_in_text(text):
+    questions = []
+    for line in text.split('\n'):
+        stripped = line.strip()
+        if stripped.startswith('\u044d\u044d'):
+            questions.append(stripped)
+    return questions
 
 def main():
-    dry_run = "--dry-run" in sys.argv
+    dry_run = '--dry-run' in sys.argv
     if not dry_run and not acquire_lock():
-        log("Another instance running, skipping")
+        log('Another instance running, skipping')
         return
     try:
         _main(dry_run)
@@ -281,125 +106,92 @@ def main():
         if not dry_run:
             release_lock()
 
-
 def _main(dry_run):
-    log("=" * 40)
-    log(f"requests_listener v2 started{' (DRY RUN)' if dry_run else ''}")
+    log('=' * 40)
+    label = ' (DRY RUN)' if dry_run else ''
+    log(f'requests_listener v3 started{label}')
 
-    if not REQUESTS_FILE.exists():
-        log(f"{REQUESTS_FILE} not found, skipping")
+    if not INBOX_FILE.exists():
+        log(f'{INBOX_FILE} not found, skipping')
         return
 
     if not dry_run:
-        git_pull()
+        if not git_pull():
+            log('git pull failed, will still try to process current file')
 
-    content = REQUESTS_FILE.read_text(encoding="utf-8")
-    user_lines, status_lines, discuss_lines, context_lines, has_status = split_sections(content)
-    known_tasks = parse_status_section(status_lines) if has_status else {}
+    content = INBOX_FILE.read_text(encoding='utf-8')
 
-    new_tasks = find_tasks_in_user_section(user_lines)
-    if not new_tasks:
-        if discuss_lines:
-            question = detect_discussion_trigger(discuss_lines)
-            if question:
-                log(f"Discussion question: {question[:80]}...")
-                if dry_run:
-                    return
-                log(f"Calling: {BSA_TRIGGER} --mode discuss")
-                result = subprocess.run(
-                    [sys.executable, str(BSA_TRIGGER), "--mode", "discuss", question],
-                    capture_output=True, text=True, timeout=300,
-                )
-                if result.returncode == 0:
-                    log("BSA discuss completed")
-                    if result.stdout:
-                        log(f"BSA discuss output: {result.stdout.strip()[-200:]}")
-                else:
-                    log(f"BSA discuss failed (exit={result.returncode}): {result.stderr[:300]}")
-                git_commit_push()
-                return
-
-        log("No new tasks or discussion")
-        update_timestamp_in_file()
+    current_hash = hashlib.md5(content.encode()).hexdigest()
+    last_hash = read_hash()
+    if current_hash == last_hash:
+        log('inbox.md unchanged, skipping')
         return
+    log(f'inbox.md changed (hash: {current_hash[:12]}...)')
 
-    fresh = []
-    for t in new_tasks:
-        if t["text"] in known_tasks:
-            known_status = known_tasks[t["text"]]["status"]
-            log(f"Already tracked ({known_status}), skipping: {t['text']}")
+    tasks_section = ''
+    discuss_section = ''
+    current_section = None
+    for line in content.split('\n'):
+        if '\u0437\u0430\u0434\u0430\u0447' in line.lower():
+            current_section = 'tasks'
             continue
-        fresh.append(t)
+        elif '\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f' in line.lower():
+            current_section = 'discuss'
+            continue
+        if current_section == 'tasks':
+            tasks_section += line + '\n'
+        elif current_section == 'discuss':
+            discuss_section += line + '\n'
 
-    if not fresh:
-        log("All tasks already tracked by BSA")
+    tasks = find_tasks_in_text(tasks_section)
+    questions = find_discussion_in_text(discuss_section)
+
+    log(f'Tasks found: {len(tasks)}, Discussion messages: {len(questions)}')
+
+    if not tasks and not questions:
+        log('No new tasks or discussion content found')
+        if not dry_run:
+            write_hash(current_hash)
         return
-
-    log(f"Found {len(fresh)} new task(s), waking BSA")
 
     if dry_run:
-        log("[DRY RUN] would mark ⏳ and call BSA")
-        for t in fresh:
-            log(f"  ⏳ {t['text']}")
+        if tasks:
+            log(f'[DRY RUN] Would call BSA with {len(tasks)} tasks')
+        if questions:
+            log(f'[DRY RUN] Would call BSA discuss: {questions[-1][:80]}...')
         return
 
-    # 1. Mark as ⏳ and save pre-BSA state for merge
-    for t in fresh:
-        known_tasks[t["text"]] = {
-            "status": "pending", "detail": "", "taken_at": now_str(),
-        }
-
-    full_text = rebuild_file(user_lines, known_tasks, discuss_lines, context_lines)
-    tmp = REQUESTS_FILE.with_suffix(".md.tmp")
-    tmp.write_text(full_text, encoding="utf-8")
-    tmp.rename(REQUESTS_FILE)
-    git_commit_push()
-    log("Marked ⏳, committed. Now waking BSA...")
-
-    # Save snapshot of known_tasks BEFORE BSA for merge recovery
-    pre_bsa_tasks = dict(known_tasks)
-
-    # 2. Call BSA trigger
-    log(f"Calling: {BSA_TRIGGER} --mode trigger")
-    result = subprocess.run(
-        [sys.executable, str(BSA_TRIGGER), "--mode", "trigger"],
-        capture_output=True, text=True, timeout=600,
-    )
-    if result.returncode == 0:
-        log("BSA completed successfully")
-        if result.stdout:
-            log(f"BSA output (last 200): {result.stdout.strip()[-200:]}")
-    else:
-        log(f"BSA failed (exit={result.returncode}): {result.stderr[:300]}")
-
-    # 3. Merge status: restore any entries BSA may have dropped
-    try:
-        new_content = REQUESTS_FILE.read_text(encoding="utf-8")
-        _, new_status_lines, new_discuss_lines, _, _ = split_sections(new_content)
-        new_known = parse_status_section(new_status_lines)
-
-        # If BSA wrote any status entries, trust its output.
-        # Only restore pre-BSA entries if BSA left status completely empty (crashed).
-        if new_known:
-            log(f"BSA wrote {len(new_known)} status entries, skipping restore")
+    if tasks:
+        log('Calling BSA --mode trigger')
+        result = subprocess.run(
+            [sys.executable, str(BSA_CHAT), '--mode', 'trigger'],
+            capture_output=True, text=True, timeout=600,
+        )
+        if result.returncode == 0:
+            log('BSA trigger completed successfully')
+            if result.stdout:
+                log(f'BSA output (last 200): {result.stdout.strip()[-200:]}')
         else:
-            restored = []
-            for text, info in pre_bsa_tasks.items():
-                if info["status"] in ("running", "pending"):
-                    restored.append((text, info))
-                    log(f"  Restored missing status: {text}")
-            if restored:
-                for text, info in restored:
-                    new_known[text] = info
-                merged_text = rebuild_file(user_lines, new_known, new_discuss_lines if new_discuss_lines else discuss_lines, context_lines)
-                mtmp = REQUESTS_FILE.with_suffix(".md.merge.tmp")
-                mtmp.write_text(merged_text, encoding="utf-8")
-                mtmp.rename(REQUESTS_FILE)
-                git_commit_push()
-                log(f"Restored {len(restored)} lost status entries")
-    except Exception as e:
-        log(f"Status merge failed: {e}")
+            log(f'BSA trigger failed (exit={result.returncode}): {result.stderr[:300]}')
+            return
 
+    elif questions:
+        question = questions[-1]
+        log(f'Discussion question: {question[:80]}...')
+        result = subprocess.run(
+            [sys.executable, str(BSA_CHAT), '--mode', 'discuss', question],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode == 0:
+            log('BSA discuss completed successfully')
+            if result.stdout:
+                log(f'BSA discuss output: {result.stdout.strip()[-200:]}')
+        else:
+            log(f'BSA discuss failed (exit={result.returncode}): {result.stderr[:300]}')
+            return
 
-if __name__ == "__main__":
+    write_hash(current_hash)
+    log(f'Hash saved: {current_hash[:12]}... -- will skip until inbox.md changes again')
+
+if __name__ == '__main__':
     main()
