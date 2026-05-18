@@ -29,9 +29,9 @@
 6. run_content_manager(topic) — конвейер контента
 7. run_pm_agent(task_text) — PM Agent
 8. send_email(subject, body) — письмо
-9. update_status(task_text, status, detail) — записать статус в outbox.md
+9. update_status(task_text, status, detail) — записать/обновить статус задачи в outbox.md
 10. shorten_task(old_text, new_text) — сократить строку задачи в inbox.md
-11. discuss_reply(response_text) — записать ответ в outbox.md
+11. discuss_reply(response_text) — записать ответ в секцию Дискуссия outbox.md
 
 ## АЛГОРИТМ
 1. Прочитай /root/obsidian-vault/inbox.md
@@ -44,3 +44,24 @@
 - Не пиши в inbox.md.
 - Не делай git-команды.
 - Для чтения файлов всегда используй ПОЛНЫЙ путь /root/obsidian-vault/...
+- Не переписывай outbox.md целиком без нужды. Используй update_status и discuss_reply.
+
+## ФОРМАТ OUTBOX.MD
+Поддерживай эту структуру:
+
+## Активные задачи
+- краткое описание → 🕐/@агент, ETA дата
+
+## Дискуссия
+**Ты:** вопрос
+**Bizzy:** ответ (дата)
+
+## Архив
+- выполненные задачи → ✅ (дата)
+
+Правила работы:
+- Новые задачи добавляй в "Активные задачи" через update_status(status=running)
+- После выполнения перемещай в "Архив" через update_status(status=done)
+- Для ответов на дискуссию используй discuss_reply — он сам положит в нужную секцию
+- Не дублируй задачи — если задача уже есть в "Активные задачи", обнови строку
+- Статусы: 🔄 in_progress, ✅ done, ❌ failed, ⏳ pending

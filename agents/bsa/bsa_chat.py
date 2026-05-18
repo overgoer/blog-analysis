@@ -191,22 +191,73 @@ def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
 
 
 def tool_update_status(task_text, status="running", detail=""):
-    """Update task status. Writes to outbox.md as a Bizzy status message."""
+    """Update task in Активные задачи or move to Архив section (lines-based)."""
     try:
         emoji = {"done": "\u2705", "running": "\U0001f504", "failed": "\u274c", "pending": "\u23f3"}
         e = emoji.get(status, "\U0001f504")
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         d = f" \u2192 {detail}" if detail else ""
-        entry = "\n---\n\n**\u0422\u044b:** \u0437\u0430\u0434\u0430\u0447\u0430: " + task_text + "\n\n**Bizzy:** " + e + " " + task_text + d + " (" + now + ")\n"
-        with open(str(OUTBOX_FILE), "a") as f:
-            f.write(entry)
+        task_entry = f"- {task_text} \u2192 {e}{d} ({ts})"
+
+        content = OUTBOX_FILE.read_text(encoding="utf-8") if OUTBOX_FILE.exists() else ""
+        if not content.strip():
+            content = "# Outbox\n\n## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438\n\n## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f\n\n## \u0410\u0440\u0445\u0438\u0432\n"
+
+        lines = content.split("\n")
+        active_idx = discuss_idx = archive_idx = None
+        for i, line in enumerate(lines):
+            s = line.strip()
+            if s == "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438":
+                active_idx = i
+            elif s == "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f":
+                discuss_idx = i
+            elif s == "## \u0410\u0440\u0445\u0438\u0432":
+                archive_idx = i
+
+        def find_task_in_section(start, end):
+            for i in range(start + 1, end if end else len(lines)):
+                s = lines[i].strip()
+                if task_text in s and s.startswith("- "):
+                    return i
+            return None
+
+        if status in ("done", "failed") and active_idx is not None:
+            task_line = find_task_in_section(active_idx, discuss_idx or archive_idx or len(lines))
+            if task_line is not None:
+                lines.pop(task_line)
+                if archive_idx is not None:
+                    lines.insert(archive_idx + 1, task_entry)
+                else:
+                    lines.append("")
+                    lines.append("## \u0410\u0440\u0445\u0438\u0432")
+                    lines.append(task_entry)
+            else:
+                if archive_idx is not None:
+                    lines.insert(archive_idx + 1, task_entry)
+                else:
+                    lines.append("")
+                    lines.append("## \u0410\u0440\u0445\u0438\u0432")
+                    lines.append(task_entry)
+
+        elif active_idx is not None:
+            task_line = find_task_in_section(active_idx, discuss_idx or archive_idx or len(lines))
+            if task_line is not None:
+                lines[task_line] = task_entry
+            else:
+                lines.insert(active_idx + 1, task_entry)
+        else:
+            lines = ["# Outbox", "", "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438",
+                     task_entry, "", "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f", "", "## \u0410\u0440\u0445\u0438\u0432"]
+
+        OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
+
         subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
         r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
         if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + now], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + ts], capture_output=True, timeout=15)
             subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
             subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
-        return "Status written to outbox.md: " + task_text + " \u2192 " + status
+        return task_text + " \u2192 " + status + " (\u0441\u0435\u043a\u0446\u0438\u044f outbox.md \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0430)"
     except Exception as e:
         log("update_status error: " + str(e))
         return "Error: " + str(e)
@@ -224,7 +275,7 @@ def tool_shorten_task(old_text, new_text):
         return "Error: " + str(e)
 
 def tool_discuss_reply(response_text):
-    """Append BSA response to outbox.md with **\u0422\u044b:** / **Bizzy:** format + git commit+push.
+    """Append to \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f section in outbox.md (lines-based).
     Auto-detects \u044d\u044d\u044d (new thread) and adds visual separator."""
     try:
         last_question = ""
@@ -239,24 +290,59 @@ def tool_discuss_reply(response_text):
                     break
         except Exception:
             pass
-        
+
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        sep = "\n--- * * * ---\n" if is_new_tread else ""
+        block_lines = []
+        if is_new_tread:
+            block_lines.append("--- * * * ---")
         if last_question:
-            entry = sep + "\n---\n\n**\u0422\u044b:** " + last_question.rstrip("!") + "\n\n**Bizzy:** " + response_text + "\n"
+            block_lines.append(f"**\u0422\u044b:** {last_question.rstrip('!')}")
+            block_lines.append("")
+            block_lines.append(f"**Bizzy:** {response_text} ({ts})")
         else:
-            entry = sep + "\n---\n\n**Bizzy:** " + response_text + "\n"
-        
-        with open(str(OUTBOX_FILE), "a") as f:
-            f.write(entry)
-        
+            block_lines.append(f"**Bizzy:** {response_text} ({ts})")
+
+        content = OUTBOX_FILE.read_text(encoding="utf-8") if OUTBOX_FILE.exists() else ""
+        lines = content.split("\n") if content.strip() else []
+
+        # Find \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f section
+        discuss_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f":
+                discuss_idx = i
+                break
+
+        if discuss_idx is not None:
+            # Insert block after header (insert at first empty line after header)
+            insert_at = discuss_idx + 1
+            while insert_at < len(lines) and lines[insert_at].strip() == "":
+                insert_at += 1
+            # Ensure blank line between block and next section
+            if insert_at < len(lines) and lines[insert_at].startswith("## "):
+                # No empty line before next section, insert block with trailing blank
+                for bl in reversed(block_lines):
+                    lines.insert(insert_at, bl)
+                lines.insert(insert_at + len(block_lines), "")
+            else:
+                for bl in reversed(block_lines):
+                    lines.insert(insert_at, bl)
+        else:
+            if not lines:
+                lines = ["# Outbox", "", "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438", "", "## \u0410\u0440\u0445\u0438\u0432"]
+            lines.append("")
+            lines.append("## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f")
+            lines.append("")
+            lines.extend(block_lines)
+
+        OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
+
         subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
         r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
         if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: response " + ts], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: discuss " + ts], capture_output=True, timeout=15)
             subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
             subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
-        return "\u2705 Response written to outbox.md (" + str(len(response_text)) + " chars)"
+        return "\u2705 Response added to \u0421\u0435\u043a\u0446\u0438\u044f \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f (" + str(len(response_text)) + " chars)"
     except Exception as e:
         log("discuss_reply error: " + str(e))
         return "Error: " + str(e)
