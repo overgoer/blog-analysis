@@ -365,7 +365,7 @@ def channel_write_post(topic, brief_text, ga_verdict):
         f"Research brief:\n{brief_text[:4000]}\n\n"
         f"Full GA review for context:\n{ga_verdict}"
     )
-    return dk(system, user, temperature=0.5, max_tokens=2000).replace('\u2014', '-')
+    return dk(system, user, temperature=0.5, max_tokens=4000).replace('\u2014', '-')
 
 
 def md_to_html(text):
