@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Content Manager — content pipeline for @eddytester.
+Content Manager - content pipeline for @eddytester.
 
 Phases:
   1. GA picks topic from pool
@@ -222,7 +222,7 @@ def ga_review_brief(topic, brief_text):
         if relevant:
             block = "\n\n## Relevant past posts (for context & cross-references)\n"
             for r in relevant:
-                angle = f" — {r['angle']}" if r.get("angle") else ""
+                angle = f" - {r['angle']}" if r.get("angle") else ""
                 block += f"- {r['title']} ({r['date']}){angle}\n  {r['summary']}\n"
             user += block
     except Exception:
@@ -324,19 +324,19 @@ def channel_write_post(topic, brief_text, ga_verdict):
             break
 
     system = textwrap.dedent("""\
-        You are a Channel Agent for @eddytester — a QA testing channel.
+        You are a Channel Agent for @eddytester - a QA testing channel.
         Your job: Write a post draft based on a research brief.
 
-        CRITICAL: The GA review provides a BEST_ANGLE — a specific angle for the post.
+        CRITICAL: The GA review provides a BEST_ANGLE - a specific angle for the post.
         Your post MUST cover the BEST_ANGLE, NOT just the first thing from the brief.
         If BEST_ANGLE describes a multi-point checklist (e.g., "5 bugs"), write ALL points.
 
         FORMAT (exact):
         - Situation: 1-2 sentences describing the problem or question
-        - Analysis: the technical core — what's happening, why it matters
+        - Analysis: the technical core - what's happening, why it matters
         - Verdict: bug or not? what should a tester do?
         - Takeaway: 1 rule for the future
-        - Реалы: 1-2 honest remarks (this part is critical — adds authenticity)
+        - Реалы: 1-2 honest remarks (this part is critical - adds authenticity)
 
         STYLE RULES:
         - Short sentences. Mix of punchy and explanatory.
@@ -347,8 +347,8 @@ def channel_write_post(topic, brief_text, ga_verdict):
         - CRITICAL: Assume the reader knows terms exist but not the details.
           Briefly explain key terms INLINE (1-2 words in parentheses or a short clause).
           Example: "ставит `alg:none`" → "ставит `alg:none` (алгоритм без подписи)"
-          Example: "измени payload" → "измени payload (тело токена — данные пользователя)"
-          Example: "ETag — это хеш контента" → add "хеш (отпечаток данных)"
+          Example: "измени payload" → "измени payload (тело токена - данные пользователя)"
+          Example: "ETag - это хеш контента" → add "хеш (отпечаток данных)"
           The goal: reader nods "ага, понятно" instead of googling mid-post.
         - NOT an encyclopedia. No long theory blocks. Just 1-2 word clarifications inline.
         - When appropriate, add 1-2 USEFUL LINKS for further reading.
@@ -365,7 +365,7 @@ def channel_write_post(topic, brief_text, ga_verdict):
         f"Research brief:\n{brief_text[:4000]}\n\n"
         f"Full GA review for context:\n{ga_verdict}"
     )
-    return dk(system, user, temperature=0.5, max_tokens=2000)
+    return dk(system, user, temperature=0.5, max_tokens=2000).replace('\u2014', '-')
 
 
 def md_to_html(text):
