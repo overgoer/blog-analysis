@@ -311,7 +311,7 @@ def style_adapter(topic, raw_content, ga_verdict):
         f'RAW CONTENT (dense material):\n{raw_content}\n\n'
         f'GA Review:\n{ga_verdict}'
     )
-    result = dk(system, user, temperature=0.5, max_tokens=2000)
+    result = dk(system, user, temperature=0.5, max_tokens=4000)
     return _fix_mixed_layout(result).replace('\u2014', '-')
 
 def channel_write_post(topic, brief_text, ga_verdict):
