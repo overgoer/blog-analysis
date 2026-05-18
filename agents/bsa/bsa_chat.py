@@ -117,6 +117,21 @@ def tool_list_dir(**kwargs):
         return "\n".join(f.name + ("/" if f.is_dir() else f"  ({f.stat().st_size}b)") for f in p.iterdir())
     except Exception as e: return f"Error: {e}"
 
+def tool_glob_files(**kwargs):
+    pattern = kwargs.get("pattern") or kwargs.get("glob") or ""
+    if not pattern: return "Error: pattern required"
+    try:
+        vault = Path("/root/obsidian-vault")
+        if not vault.exists():
+            return "Error: vault not found"
+        files = list(vault.rglob(pattern))
+        return "\n".join(
+            str(f.relative_to(vault)) for f in sorted(files)
+            if f.is_file() and _is_allowed(f, ALLOWED_READ_DIRS)
+        ) or "No matches"
+    except Exception as e:
+        return f"Error: {e}"
+
 def tool_run_researcher(topic):
     if len(topic) > 500: return "Error: topic too long"
     try:
@@ -293,10 +308,14 @@ TOOLS = [{"type": "function", "function": {
         "old_text": {"type": "string"},
         "new_text": {"type": "string"}
     }, "required": ["old_text", "new_text"]}
+}}, {"type": "function", "function": {
+    "name": "glob_files",
+    "description": "Find files by glob pattern in Obsidian vault (recursive). Examples: \"*.md\", \"**/*.md\", \"Пост_*\", \"eddytester/**/*.md\"",
+    "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}
 }}]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
-            "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
+            "list_dir": tool_list_dir, "glob_files": tool_glob_files, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
