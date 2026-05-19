@@ -1,17 +1,44 @@
 __pycache__
 *.pyc
+
 # Runtime state files
 CHRON.md
 bsa_thread.json
 wishlist.json
 processed_cmds/
 processed_ids.txt
+backlog.json
+dump.md
+
+# Telegram secrets
+.tg_token
+.tg_chat_id
+
+# Email archive
+agents/email_archive/
+
+# Scout runtime data
+agents/scout/raw/
+agents/scout/reports/
+agents/scout/report_counter.txt
+
+# Dev artifacts
+agents/dev/
+
+# Webhook runtime data
+data/webhook_processed.json
+
 # Researcher is a standalone git repo, not a submodule
 agents/researcher/
+
+# Incoming Telegram messages (runtime)
+agents/bsa/incoming/
+
 .env
 .mailcfg
 *.log
 node_modules/
 .venv/
 .opencode/
-.env
+.DS_Store
+.idea/

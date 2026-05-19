@@ -357,7 +357,7 @@ def assess_task(task_text, source="email"):
     print(json.dumps(assessment, indent=2, ensure_ascii=False))
 
     # Auto-run dev_runner on CODE + GO — только если не хватает информации
-    if source != "email_auto" and assessment.get("verdict") == "GO" and classification == "CODE":
+    if source != "email_auto" and assessment.get("verdict") == "GO" and assessment.get("classified_as") == "CODE":
         try:
             from dev_runner import run_dev_task
             repo = assessment.get("next_step", "").split()[0] if assessment.get("next_step") else "v0-test-api"
@@ -429,8 +429,141 @@ def print_assessment(assessment):
 
     print(f"{'='*60}\n")
 
+def scan_proposals():
+    """Scan pending proposals, assess via DeepSeek, move GO proposals to backlog."""
+    proposals_dir = BASE.parent / "bsa" / "pending_proposals"
+    if not proposals_dir.exists():
+        return json.dumps({"error": "pending_proposals dir not found"})
+
+    proposals = sorted(proposals_dir.glob("*.json"))
+    if not proposals:
+        return json.dumps({"summary": "No pending proposals"})
+
+    ctx = load_context()
+    if not ctx:
+        return json.dumps({"error": "Context not available"})
+
+    sys_prompt = build_system_prompt(ctx) + "\n\nYou are now assessing BUG PROPOSALS for an educational API. " \
+        "A good bug is: realistic (could happen in production), educational (teaches testing skills), " \
+        "safe (no data loss, no security vulnerability that harms students). " \
+        "A bad bug is: unrealistic, too subtle, too easy, dangerous (data corruption). " \
+        "Be critical — not every idea is a good teaching bug."
+
+    results = []
+    for fpath in proposals:
+        proposal = json.loads(fpath.read_text())
+        if proposal.get("status") != "pending":
+            continue
+
+        user_prompt = (
+            f"Assess this bug proposal for the educational API:\n\n"
+            f"Endpoint: {proposal.get('endpoint', '?')}\n"
+            f"Description: {proposal.get('description', '?')}\n"
+            f"Repository: {proposal.get('repo', '?')}\n"
+            f"Source: {proposal.get('source', '?')}\n\n"
+            "Respond in JSON:\n"
+            '{"verdict": "GO|NO_GO|NEED_MORE_INFO", "reasoning": "Russian 1-2 words", "effort": "low|medium|high"}\n'
+            "IMPORTANT: reasoning must be in Russian, 1-2 words only. Examples: Реалистично, полезно | Нереалистично, опасно | Скучно, бесполезно"
+        )
+
+        result_json = call_deepseek(sys_prompt, user_prompt, temperature=0.3, max_tokens=1024)
+        try:
+            assessment = json.loads(result_json)
+        except json.JSONDecodeError:
+            assessment = {"verdict": "NEED_MORE_INFO", "raw": result_json[:200]}
+
+        proposal["assessment"] = assessment
+        proposal["assessed_at"] = __import__("datetime").datetime.now().isoformat()
+
+        if assessment.get("verdict") == "GO":
+            title = f"[BUG] {proposal['endpoint']} — {proposal['description'][:80]}"
+            try:
+                sys.path.insert(0, str(BASE.parent / "bsa"))
+                from backlog import add_entry
+                entry = add_entry(
+                    title=title,
+                    priority="P2",
+                    source="pm_agent",
+                    origin="proposal",
+                    desc=proposal['description'],
+                    section="DEV"
+                )
+                proposal["backlog_id"] = entry["id"]
+                proposal["status"] = "approved"
+                print(f"  GO → {entry['id']}: {title}")
+            except Exception as e:
+                print(f"  [backlog error: {e}]", file=sys.stderr)
+                proposal["status"] = "backlog_error"
+        elif assessment.get("verdict") == "NO_GO":
+            proposal["status"] = "rejected"
+            print(f"  NO_GO: {proposal['endpoint']} — {assessment.get('reasoning', '')[:100]}")
+        else:
+            proposal["status"] = "need_info"
+            print(f"  NEED_MORE_INFO: {proposal['endpoint']}")
+
+        # Move proposal to status subdirectory
+        status_dir = proposals_dir / proposal["status"]
+        status_dir.mkdir(exist_ok=True)
+        fpath.rename(status_dir / fpath.name)
+
+        results.append(proposal)
+
+    summary = {
+        "scanned": len(results),
+        "approved": sum(1 for r in results if r.get("status") == "approved"),
+        "rejected": sum(1 for r in results if r.get("status") == "rejected"),
+        "need_info": sum(1 for r in results if r.get("status") == "need_info"),
+        "proposals": [
+            {"id": r["id"], "endpoint": r["endpoint"],
+             "description": r.get("description", ""),
+             "reasoning": r.get("assessment", {}).get("reasoning", ""),
+             "verdict": r.get("assessment", {}).get("verdict"),
+             "backlog_id": r.get("backlog_id")}
+            for r in results
+        ],
+    }
+
+    # Push digest to Telegram
+    try:
+        digest_lines = ["🤖 *PM Agent: обзор предложений*\n"]
+        if summary["approved"]:
+            digest_lines.append(f"✅ *Одобрено:* {summary['approved']}")
+            for p in summary["proposals"]:
+                if p["verdict"] == "GO":
+                    desc = (p.get("description") or "")[:120]
+                    digest_lines.append(f"  • *{p['endpoint']}* — {desc}")
+                    digest_lines.append(f"    {p.get('reasoning','')[:50]}")
+        if summary["rejected"]:
+            digest_lines.append(f"\n❌ *Отклонено:* {summary['rejected']}")
+            for p in summary["proposals"]:
+                if p["verdict"] == "NO_GO":
+                    desc = (p.get("description") or "")[:120]
+                    digest_lines.append(f"  • *{p['endpoint']}* — {desc}")
+                    digest_lines.append(f"    {p.get('reasoning','')[:100]}")
+        if summary["need_info"]:
+            digest_lines.append(f"\n❓ *Нужно уточнение:* {summary['need_info']}")
+            for p in summary["proposals"]:
+                if p["verdict"] == "NEED_MORE_INFO":
+                    desc = (p.get("description") or "")[:120]
+                    digest_lines.append(f"  • *{p['endpoint']}* — {desc}")
+        digest_lines.append(f"\nБэклог: /bl · /bl done B-XXX")
+
+        digest_text = "\n".join(digest_lines)
+        sys.path.insert(0, str(BASE.parent / "bsa"))
+        from telegram_bot import push_message
+        push_message(digest_text)
+    except Exception as e:
+        print(f"  [digest push error: {e}]", file=sys.stderr)
+
+    return json.dumps(summary, indent=2, ensure_ascii=False)
+
+
 def main():
     args = sys.argv[1:]
+
+    if "--scan-proposals" in args:
+        print(scan_proposals())
+        return
 
     do_classify = "--classify" in args
     if do_classify:
@@ -448,6 +581,7 @@ def main():
         print("  echo \"dev: install grafana\" | python3 pm_agent.py")
         print("  echo \"dev: посмотри serpapi\" | python3 pm_agent.py --classify")
         print("  python3 pm_agent.py --classify \"dev: добавь JWT\"")
+        print("  python3 pm_agent.py --scan-proposals")
         sys.exit(1)
 
     if do_classify:

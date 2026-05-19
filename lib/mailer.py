@@ -16,6 +16,12 @@ from email import encoders
 from pathlib import Path
 
 ARCHIVE_DIR = "/root/blog-analysis/agents/email_archive"
+SILENT = False  # set to True to suppress print() output
+
+
+def _log(msg):
+    if not SILENT:
+        print(f"[mailer] {msg}")
 
 
 def _save_local(subject, body, html=None):
@@ -57,6 +63,7 @@ def load_config(path=None):
         "username": os.environ.get("MAIL_USER"),
         "password": os.environ.get("MAIL_PASS"),
         "resend_api_key": os.environ.get("RESEND_API_KEY"),
+        "unisender_api_key": os.environ.get("UNISENDER_API_KEY"),
         "from_addr": os.environ.get("MAIL_FROM", os.environ.get("MAIL_USER")),
         "to_addr": os.environ.get("MAIL_TO"),
     }
@@ -72,13 +79,20 @@ def send(subject, body, html=None, attachments=None, cfg=None, config_path=None,
         if _send_resend(cfg["resend_api_key"], subject, body, html, attachments, cfg, in_reply_to, references):
             return True
     else:
-        print("[mailer] No resend_api_key configured, skipping Resend API")
+        _log("No resend_api_key, skipping Resend API")
 
-    # 2. Try SMTP
+    # 2. Try Unisender API (Russian, HTTPS)
+    if cfg.get("unisender_api_key"):
+        if _send_unisender(cfg, subject, body, html):
+            return True
+    else:
+        _log("No unisender_api_key, skipping Unisender API")
+
+    # 3. Try SMTP
     if _send_smtp(subject, body, html, attachments, cfg):
         return True
 
-    # 3. Fallback: save locally
+    # 4. Fallback: save locally
     _save_local(subject, body, html)
     return False
 
@@ -144,6 +158,39 @@ def _send_resend(api_key, subject, body, html=None, attachments=None, cfg=None, 
             return False
     except Exception as e:
         print(f"[mailer] Resend API exception: {e}")
+        return False
+
+
+def _send_unisender(cfg, subject, body, html=None):
+    """Send via Unisender API (Russian service, works from Russia via HTTPS)."""
+    api_key = cfg.get("unisender_api_key")
+    from_addr = cfg.get("from_addr", cfg.get("username", ""))
+    to_addr = cfg.get("to_addr", "")
+    if not api_key or not to_addr:
+        return False
+    try:
+        import urllib.request, urllib.parse
+        params = {
+            "api_key": api_key,
+            "email": to_addr,
+            "sender_name": "Bizzy",
+            "sender_email": from_addr,
+            "subject": subject,
+            "body": body,
+            "list_id": "1",
+        }
+        if html:
+            params["html_body"] = html
+        url = "https://api.unisender.com/ru/api/sendEmail?" + urllib.parse.urlencode(params)
+        r = urllib.request.urlopen(url, timeout=15)
+        resp = json.loads(r.read())
+        if resp.get("result", {}).get("email_id"):
+            _log(f"Unisender sent: {subject}")
+            return True
+        _log(f"Unisender error: {resp.get('error', str(resp)[:200])}")
+        return False
+    except Exception as e:
+        _log(f"Unisender exception: {e}")
         return False
 
 

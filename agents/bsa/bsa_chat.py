@@ -347,6 +347,88 @@ def tool_discuss_reply(response_text):
         log("discuss_reply error: " + str(e))
         return "Error: " + str(e)
 
+
+
+def tool_check_channel(query):
+    """Check @eddytester channel posts. Usage: "latest" or "post 414" or "post 414 comments"."""
+    try:
+        import subprocess, os
+        base = "/root/blog-analysis/agents/bsa"
+        cmd = [sys.executable or "python3", os.path.join(base, "channel_checker.py")]
+        parts = query.strip().split()
+        if not parts:
+            cmd.extend(["--posts", "1"])
+        elif parts[0] == "latest":
+            count = parts[1] if len(parts) > 1 and parts[1].isdigit() else "1"
+            cmd.extend(["--posts", str(count)])
+        elif parts[0] == "post" and len(parts) > 1:
+            cmd.extend(["--post", parts[1]])
+            if "comments" in parts or "comment" in parts:
+                cmd.append("--comments")
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        out = r.stdout[-4000:] or r.stderr[-4000:]
+        return out[:4000]
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def tool_backlog(command):
+    """Manage backlog: add, done, summary."""
+    try:
+        import sys
+        sys.path.insert(0, "/root/blog-analysis/agents/bsa")
+        from backlog import add_entry, mark_done, get_summary, mark_in_progress
+
+        cmd = command.strip()
+        if cmd.startswith("add "):
+            rest = cmd[4:].strip()
+            priority = "P3"
+            title = rest
+            if rest.startswith("[") and rest[1] in "P0123":
+                priority = f"P{rest[2]}" if len(rest) > 2 and rest[2].isdigit() else "P3"
+                title = rest[4:].strip() if len(rest) > 4 else rest
+            elif len(rest) > 2 and rest[0:2] in ("P0", "P1", "P2", "P3") and rest[2:3] in (" ", ""):
+                priority = rest[0:2]
+                title = rest[3:].strip()
+            entry = add_entry(title, priority=priority, source="telegram", origin="bizzy")
+            return f"Done: Added {entry['id']} [{priority}]"
+
+        if cmd.startswith("done "):
+            eid = cmd[5:].strip()
+            if mark_done(eid):
+                return f"Done: {eid} completed"
+            return f"Done: {eid} not found"
+
+        if cmd.startswith("in_progress ") or cmd.startswith("ip "):
+            rest = cmd[len("in_progress "):].strip() if cmd.startswith("in_progress ") else cmd[3:].strip()
+            eid = rest.strip()
+            if mark_in_progress(eid):
+                return f"Done: {eid} in progress"
+            return f"Done: {eid} not found"
+
+        return get_summary()
+    except Exception as e:
+        return f"Backlog error: {e}"
+
+def tool_propose_bug(endpoint, description, repo="api-practicum"):
+    import json
+    from datetime import datetime
+    proposals_dir = Path(__file__).resolve().parent / "pending_proposals"
+    proposals_dir.mkdir(exist_ok=True)
+    proposal = {
+        "id": datetime.now().strftime("PROP-%Y%m%d-%H%M%S"),
+        "endpoint": endpoint,
+        "description": description,
+        "repo": repo,
+        "status": "pending",
+        "source": "telegram",
+        "created_at": datetime.now().isoformat(),
+    }
+    fpath = proposals_dir / "{}.json".format(proposal["id"])
+    fpath.write_text(json.dumps(proposal, ensure_ascii=False, indent=2))
+    return "Proposal {}: {} - {}".format(proposal["id"], endpoint, description[:100])
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -395,9 +477,28 @@ TOOLS = [{"type": "function", "function": {
         "new_text": {"type": "string"}
     }, "required": ["old_text", "new_text"]}
 }}, {"type": "function", "function": {
+    "name": "check_channel",
+    "description": "Check @eddytester channel: \"latest\", \"latest 3\", \"post 414\", \"post 414 comments\"",
+    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+}}
+, {"type": "function", "function": {
+    "name": "backlog",
+    "description": "Manage backlog: \"add P2 Title\", \"done B-001\", \"summary\", \"ip B-001\"",
+    "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}
+}}
+, {"type": "function", "function": {
     "name": "glob_files",
     "description": "Find files by glob pattern in Obsidian vault (recursive). Examples: \"*.md\", \"**/*.md\", \"Пост_*\", \"eddytester/**/*.md\"",
     "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}
+}},
+{"type": "function", "function": {
+    "name": "propose_bug",
+    "description": "Create a bug proposal for practicum API repos. Specify endpoint, description, and optionally repo.",
+    "parameters": {"type": "object", "properties": {
+        "endpoint": {"type": "string"},
+        "description": {"type": "string"},
+        "repo": {"type": "string", "enum": ["api-practicum", "free-trial-api", "api-practicum-bot"]}
+    }, "required": ["endpoint", "description"]}
 }}]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
@@ -405,7 +506,7 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
-            "discuss_reply": tool_discuss_reply}
+            "check_channel": tool_check_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug}
 
 
 def build_prompt():
@@ -562,7 +663,7 @@ def discuss_mode(question):
             if OUTBOX_FILE.exists():
                 outbox_history = OUTBOX_FILE.read_text(encoding="utf-8").strip()
                 if outbox_history:
-                    history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435."
+                    history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435.\n\u0412\u0410\u0416\u041d\u041e: \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043c\u043e\u0433 \u0441\u043c\u0435\u043d\u0438\u0442\u044c \u0442\u0435\u043c\u0443. \u0415\u0441\u043b\u0438 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u0440\u043e \u0434\u0440\u0443\u0433\u043e\u0435 \u2014 \u043e\u0442\u0432\u0435\u0447\u0430\u0439 \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441, \u043d\u0435 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0439\u0441\u044f \u043a \u0441\u0442\u0430\u0440\u043e\u0439 \u0442\u0435\u043c\u0435."
                     discuss_prompt_text += history_note
         except Exception as e:
             log("History read failed (non-critical): " + str(e))
