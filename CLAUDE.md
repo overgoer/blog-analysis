@@ -140,18 +140,22 @@ Discord-формат в inbox/outbox:
 | Инструмент | Назначение |
 |---|---|
 | `read_file` | Чтение файлов из Obsidian vault и проекта |
-| `write_file` | Запись файлов |
-| `update_status` | Обновление статуса задач в requests.md |
-| `shorten_task` | Сокращение текста задачи |
+| `write_file` | Запись/редактирование файлов |
+| `list_dir` | Список файлов в директории |
+| `glob_files` | Поиск файлов по glob-паттерну |
+| `run_researcher` | Запуск Researcher агента (веб-поиск) |
 | `run_content_manager` | Запуск Content Manager агента |
 | `run_pm_agent` | Запуск PM Agent (оценка/классификация) |
 | `run_agent` | Запуск произвольного агента (scout, educator и т.д.) |
 | `send_email` | Отправка email через mailer |
-| `discuss_reply` | Запись ответа в outbox.md (ОБЯЗАТЕЛЕН в discuss mode) |
-| `glob_files` | Поиск файлов по glob-паттерну |
+| `update_status` | Обновление статуса задач в requests.md |
+| `shorten_task` | Сокращение текста задачи |
 | `check_channel` | Проверка постов Telegram-канала @eddytester |
 | `backlog` | Управление бэклогом (add/done/summary/ip) |
 | `propose_bug` | Создание предложения по багу для practicum API |
+
+> `discuss_reply` — специальный инструмент только для discuss mode (запись в outbox.md).
+> Определён в TOOL_MAP, но может не быть в TOOLS — injected при необходимости.
 
 `TOOL_MAP` и `TOOLS` живут в `bsa_chat.py`. При добавлении нового инструмента нужно обновить оба списка.
 
