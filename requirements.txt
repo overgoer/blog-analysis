@@ -1,0 +1,8 @@
+# blog-analysis — зависимости
+#
+# Проект использует DeepSeek API через curl (subprocess).
+# requests — опциональный fallback для bsa_agent.py и mailer.py.
+# Вся остальная логика — на stdlib Python 3.
+
+# Основное
+requests>=2.28.0

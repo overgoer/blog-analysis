@@ -1,5 +1,9 @@
 __pycache__
 *.pyc
+*.bak
+plan.md
+PHASE
+.running
 
 # Runtime state files
 CHRON.md
