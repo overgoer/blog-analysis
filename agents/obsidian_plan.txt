@@ -1,0 +1,44 @@
+Plan for Obsidian vault cleanup:
+
+1. Create README.md (vault index with wikilinks)
+2. Create _Архив/ directory
+3. Move to _Архив/:
+   - Стратегия/BSA_STRATEGY_v2_2026-05-15.md
+   - Стратегия/BSA_STRATEGY_v3_2026-05-15.md
+   - Стратегия/BSA_STRATEGY_v3_2026-05-17.md
+   - Стратегия/BSA_STRATEGY_v4_2026-05-17.md
+   - Стратегия/BSA_STRATEGY_v5_2026-05-17.md
+   - Стратегия/BSA_FORMATS_* (all old format versions)
+   - Стратегия/BSA_2026-05-*.md (session logs)
+   - Стратегия/BSA_ANALYSIS_*, BSA_AUTOCHECK*, BSA_DAY1*, etc
+   - Стратегия/BSA_EMAIL_*, BSA_STATUS_*, BSA Instagram*
+   - Стратегия/BSA_FORMATS_v2_PART*.md
+   - Стратегия/formats_backup/ (entire folder)
+   - Аналитика/ (entire folder — too big, Bizzy-only)
+   - PM Agent/ (entire folder — old decisions)
+   - Orchestrator files at root (Оркестратор*.md)
+   - Daily notes (daily notes/, Ежедневные/)
+   - Archived Java/, Java/ (if not needed)
+   - Iterka/ (old competitor analysis)
+   - Сервер/ (server incident reports)
+   - Instagram Content Agent — Архитектура.md
+   - BSA Instagram Strategy 2026-05-14.md
+   - blog_data/
+   - formats/ (old format files at root)
+   - temps/
+   - Журнал/
+   - Хобби/
+   - Шаблоны/
+   - Черновики/ (27 old drafts — keep for now, maybe move)
+4. Keep at root or in clean structure:
+   - Стратегия/BSA_STRATEGY_v6_2026-05-17.md → Стратегия.md (copy)
+   - Стратегия/Календарь.md → keep
+   - Стратегия/Бэклог_задач_18-24_мая.md → keep
+   - Стратегия/Исследования/ → keep (recent research)
+   - Стратегия/Конкуренты/ → keep
+   - Стратегия/Пульс/ → keep
+   - Стратегия/WEEKLY_EXECUTION_CHECKLIST.md → keep
+   - Посты/ → keep
+   - new_posts/ → merge into Посты/
+   - 01 API Practicum/ → keep
+   - API Practicum/ → merge into 01 API Practicum/
