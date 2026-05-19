@@ -373,6 +373,25 @@ def tool_check_channel(query):
         return f"Error: {e}"
 
 
+def tool_download_channel(channel, posts=200, post_id=0, comments=False):
+    """Download posts from ANY Telegram channel."""
+    try:
+        base = "/root/blog-analysis/agents/bsa"
+        downloader = os.path.join(base, "channel_downloader.py")
+        cmd = [sys.executable or "python3", downloader,
+               "--channel", channel, "--posts", str(posts), "--format", "summary"]
+        if post_id:
+            cmd = [sys.executable or "python3", downloader,
+                   "--channel", channel, "--post", str(post_id)]
+            if comments:
+                cmd.append("--comments")
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        out = r.stdout or r.stderr
+        return out[:5000]
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def tool_backlog(command):
     """Manage backlog: add, done, summary."""
     try:
@@ -480,6 +499,13 @@ TOOLS = [{"type": "function", "function": {
     "name": "check_channel",
     "description": "Check @eddytester channel: \"latest\", \"latest 3\", \"post 414\", \"post 414 comments\"",
     "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+}}, {"type": "function", "function": {
+    "name": "download_channel",
+    "description": "Download posts from ANY Telegram channel. Use for competitor channels like @rvtsakunov. Returns summary with total, date range, media count. Examples: \"download @rvtsakunov 200\", \"download @rvtsakunov 5000\" (batched with delays).",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string", "description": "Channel @username or ID"},
+        "posts": {"type": "integer", "description": "Number of posts to download (default 200, no hard limit)"}
+    }, "required": ["channel"]}
 }}
 , {"type": "function", "function": {
     "name": "backlog",
@@ -506,7 +532,7 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
-            "check_channel": tool_check_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug}
+            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug}
 
 
 def build_prompt():
