@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Scraper — Telegram channel scraper via tdl."""
-import subprocess, json, re
+"""Scraper — Telegram channel scraper via tdl (tdl 0.20.2+)."""
+import json, subprocess, tempfile, os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,52 +8,27 @@ from typing import Optional
 TDL = "/usr/local/bin/tdl"
 
 
-def _parse_tdl_post(raw: dict) -> Optional[dict]:
-    """Parse a single tdl post dict into our schema."""
+def _parse_tdl_post(msg: dict) -> Optional[dict]:
+    """Parse a tdl 0.20.2 message dict into our schema."""
     try:
-        msg = raw.get("message", raw)
         msg_id = msg.get("id", 0)
         if not msg_id:
             return None
 
-        text = ""
-        content = msg.get("content", {})
-        media_type = "text"
-
-        if "text" in content:
-            txt_parts = content["text"]
-            if isinstance(txt_parts, list):
-                text = "".join(p if isinstance(p, str) else p.get("text", "") for p in txt_parts)
-            else:
-                text = str(txt_parts)
-        if not text and "caption" in content:
-            text = content["caption"].get("text", "")
-
-        if "photo" in content:
-            media_type = "photo"
-        elif any(k in content for k in ("video", "animation", "voice", "video_note")):
-            media_type = "video"
-        elif "document" in content:
-            media_type = "document"
-
-        views = msg.get("views", 0)
-        forwards = msg.get("forwards", 0)
-        reply_count = 0
-        if "interaction_info" in msg:
-            reply_info = msg["interaction_info"].get("reply_info", {})
-            reply_count = reply_info.get("reply_count", 0)
+        text = msg.get("text", "") or ""
+        media_type = "photo" if msg.get("file") else "text"
 
         posted_at = msg.get("date", "")
-        if isinstance(posted_at, int):
+        if isinstance(posted_at, (int, float)):
             posted_at = datetime.utcfromtimestamp(posted_at).isoformat()
 
         return {
             "tg_post_id": msg_id,
             "posted_at": posted_at,
             "text": text.strip()[:1000],
-            "views": views or 0,
-            "forwards": forwards or 0,
-            "replies_count": reply_count or 0,
+            "views": msg.get("views", 0) or 0,
+            "forwards": msg.get("forwards", 0) or 0,
+            "replies_count": 0,
             "media_type": media_type,
         }
     except Exception:
@@ -61,25 +36,33 @@ def _parse_tdl_post(raw: dict) -> Optional[dict]:
 
 
 def export_messages(channel: str, limit: int = 50) -> list:
-    """Export messages from a Telegram channel via tdl."""
-    cmd = [TDL, "chat", "export", "-c", channel, "-n", str(limit), "--format", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if result.returncode != 0:
-        raise RuntimeError(f"tdl error: {result.stderr[:500]}")
+    """Export messages from a Telegram channel via tdl 0.20.2."""
+    tmp = tempfile.mktemp(suffix=".json")
+    try:
+        cmd = [TDL, "chat", "export", "-c", channel,
+               "--type", "last", "--input", str(limit),
+               "--output", tmp, "--with-content"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise RuntimeError(f"tdl error: {result.stderr[:500]}")
 
-    posts = []
-    for line in result.stdout.strip().split("\n"):
-        if not line.strip():
-            continue
-        try:
-            raw = json.loads(line)
-            parsed = _parse_tdl_post(raw)
+        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+            return []
+
+        data = json.loads(open(tmp, encoding="utf-8").read())
+        raw_messages = data.get("messages", [])
+
+        posts = []
+        for msg in raw_messages:
+            parsed = _parse_tdl_post(msg)
             if parsed:
                 posts.append(parsed)
-        except json.JSONDecodeError:
-            continue
-
-    return posts
+        return posts
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def scrape_channel(channel_name: str) -> tuple:
