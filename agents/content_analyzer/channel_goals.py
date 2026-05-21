@@ -64,6 +64,18 @@ COMPETITORS = {
 
 PRIMARY_COMPETITORS = ["@qachanell", "@qabigtech", "@protestinginfo", "@rvtsakunov", "@burning_tester"]
 
+# ── Subscriber counts (known / estimated) ───────────────────────────────
+# Used to compute reach rate (% of subscribers who viewed).
+# Обновляй по мере уточнения данных.
+SUBSCRIBERS = {
+    "@eddytester": 1500,
+    "@qachanell": 5000,      # оценка
+    "@qabigtech": 3000,      # оценка
+    "@burning_tester": 3000, # оценка
+    "@protestinginfo": 5000, # оценка
+    "@serious_tester": 5000, # оценка
+}
+
 # ── Analysis thresholds ─────────────────────────────────────────────────
 CONFIDENCE_THRESHOLDS = {
     "LOW": {"min_samples": 1, "label": "Мало данных"},

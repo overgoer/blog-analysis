@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
 from db import init_db
 from config import DEFAULT_CHANNELS
-from channel_goals import GOALS, PRIMARY_COMPETITORS, CONFIDENCE_THRESHOLDS, ENGAGEMENT_WEIGHTS
+from channel_goals import GOALS, PRIMARY_COMPETITORS, CONFIDENCE_THRESHOLDS, ENGAGEMENT_WEIGHTS, SUBSCRIBERS
 
 # ── Paths ───────────────────────────────────────────────────────────────
 WEEKLY_DIR = Path("/root/obsidian-vault/eddytester/Стратегия/Анализ/Weekly")
@@ -229,10 +229,13 @@ def analyze_best_timing(own_posts: list) -> dict:
 
 
 def compute_competitor_gap(channel_summary: list) -> list:
-    """Compare @eddytester metrics vs primary competitors."""
+    """Compare @eddytester metrics vs primary competitors with reach rate %."""
     our = next((c for c in channel_summary if c["channel_name"] == "@eddytester"), None)
     if not our:
         return []
+
+    our_subs = SUBSCRIBERS.get("@eddytester", 0)
+    our_reach = round(our["avg_views"] / our_subs * 100, 1) if our_subs else None
 
     gaps = []
     for c in channel_summary:
@@ -240,14 +243,18 @@ def compute_competitor_gap(channel_summary: list) -> list:
             continue
         if c["channel_name"] not in PRIMARY_COMPETITORS:
             continue
+        comp_subs = SUBSCRIBERS.get(c["channel_name"], 0)
+        comp_reach = round(c["avg_views"] / comp_subs * 100, 1) if comp_subs else None
+
         gap = {
             "competitor": c["channel_name"],
             "views_gap": (c["avg_views"] - our["avg_views"]) / max(our["avg_views"], 1),
-            "engage_gap": (c["avg_views"] + c["avg_forwards"] + c["avg_replies"])
-                          - (our["avg_views"] + our["avg_forwards"] + our["avg_replies"]),
-            "post_freq": round(c["total_posts"] / max(our["total_posts"], 1), 1),
             "competitor_avg_views": round(c["avg_views"]),
             "our_avg_views": round(our["avg_views"]),
+            "our_reach_pct": our_reach,
+            "comp_reach_pct": comp_reach,
+            "our_subs": our_subs,
+            "comp_subs": comp_subs,
         }
         gaps.append(gap)
 
@@ -283,11 +290,11 @@ def chart_views_trend(daily_data: list, days=14):
     colors = ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dfe6e9"]
     for i, ch in enumerate(top):
         pts = sorted(series[ch], key=lambda r: r["day"])
-        days = [r["day"] for r in pts]
+        days_dt = [datetime.strptime(r["day"], "%Y-%m-%d") for r in pts]
         vals = [r["avg_views"] for r in pts]
         color = colors[i % len(colors)]
         label = ch.replace("@", "")
-        ax.plot(days, vals, marker="o", label=label, color=color, linewidth=2, markersize=4)
+        ax.plot(days_dt, vals, marker="o", label=label, color=color, linewidth=2, markersize=4)
 
     ax.tick_params(colors="white", labelsize=9)
     ax.set_ylabel("Средние просмотры", color="white", fontsize=10)
@@ -295,6 +302,8 @@ def chart_views_trend(daily_data: list, days=14):
     ax.legend(fontsize=8, loc="upper left", facecolor="#2d2d2d", labelcolor="white", framealpha=0.8)
     ax.grid(True, alpha=0.15, color="white")
     ax.set_xlabel("")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %b'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
     plt.xticks(rotation=30, ha="right")
     fig.tight_layout()
     fpath = CHARTS_DIR / f"views_trend_{date.today().isoformat()}.png"
@@ -485,14 +494,20 @@ def _build_competitor_gap_section(channel_summary: list) -> str:
     lines = ["## 🔍 Сравнение с конкурентами", ""]
     gaps = compute_competitor_gap(channel_summary)
     if gaps:
-        lines.append("| Конкурент | Наши avg просмотры | Их avg просмотры | Разрыв |")
-        lines.append("|-----------|-------------------|-----------------|--------|")
+        lines.append("| Конкурент | Их avg просмотры | Охват (%) | Наш avg просмотры | Наш охват (%) |")
+        lines.append("|-----------|-----------------|-----------|-------------------|---------------|")
         for g in gaps:
-            gap_pct = f"+{round(g['views_gap'] * 100)}%" if g["views_gap"] > 0 else f"{round(g['views_gap'] * 100)}%"
+            comp_reach = f"{g['comp_reach_pct']}%" if g['comp_reach_pct'] is not None else "—"
+            our_reach = f"{g['our_reach_pct']}%" if g['our_reach_pct'] is not None else "—"
             lines.append(
-                f"| {g['competitor']} | {_fmt_big(g['our_avg_views'])} | "
-                f"{_fmt_big(g['competitor_avg_views'])} | {gap_pct} |"
+                f"| {g['competitor']} | {_fmt_big(g['competitor_avg_views'])} | {comp_reach} | "
+                f"{_fmt_big(g['our_avg_views'])} | {our_reach} |"
             )
+        lines.append("")
+        our_subs = gaps[0]["our_subs"]
+        lines.append(f"⚠️ *Важно:* у каналов разное количество подписчиков. ")
+        lines.append(f"Наш канал ~{our_subs} подп., у конкурентов может быть в разы больше. ")
+        lines.append("_Сравнение по сырым просмотрам без учёта охвата (%) не релевантно._")
         lines.append("")
     else:
         lines.append("_Недостаточно данных для сравнения._")
@@ -555,8 +570,12 @@ def _build_recommendations(gaps: list, fmt_perf: list, eq: dict, goals_review: l
     # Gap-based
     if gaps and gaps[0]["views_gap"] > 0.5:
         top_comp = gaps[0]["competitor"]
+        g = gaps[0]
+        reach_note = ""
+        if g["comp_reach_pct"] and g["our_reach_pct"]:
+            reach_note = f" (их охват {g['comp_reach_pct']}%, наш {g['our_reach_pct']}%)"
         lines.append(f"### 3. Смотреть на {top_comp}")
-        lines.append(f"Отставание по просмотрам {round(gaps[0]['views_gap']*100)}%. ")
+        lines.append(f"Разрыв по просмотрам {round(g['views_gap']*100)}%{reach_note}. ")
         lines.append(f"Проанализируй 5 их последних постов — что в заголовках, какой CTA?")
         lines.append("")
 
@@ -683,87 +702,101 @@ def save_review(review: dict) -> str:
 
 
 def get_longread_summary(review: dict) -> str:
-    """TG-friendly summary with key findings (~3500 chars)."""
+    """TG-friendly summary with key findings — formatted for HTML parse_mode."""
     md = review["markdown"]
     lines = md.split("\n")
-    summary = []
-    total = len(lines)
+
+    # ── Extract sections from markdown ──
+    def section(name):
+        """Get compact content from a markdown section."""
+        out = []
+        capture = False
+        for line in lines:
+            if name in line and line.startswith("##"):
+                capture = True
+                continue
+            if capture:
+                if line.startswith("---") or (line.startswith("## ") and "##" not in name):
+                    break
+                out.append(line)
+        return out
+
+    parts = []
 
     # 1. Header
-    for i, line in enumerate(lines):
-        if line.startswith("# Стратеги"):
-            summary.append(line.replace("# ", "📊 *", 1) + "*")
-            if i + 1 < total and lines[i+1].startswith("_"):
-                summary.append(lines[i+1])
-            break
-    summary.append("")
-
-    # 2. Our metrics (first row of metrics table)
-    in_metrics = False
     for line in lines:
-        if "Метрики за неделю" in line:
-            in_metrics = True
-            continue
-        if in_metrics and line.startswith("| @"):
-            summary.append(f"📈 *Канал:* {line}")
+        if line.startswith("# Стратеги"):
+            parts.append(f"<b>{line.replace('# ', '📊 ', 1)}</b>")
+        elif line.startswith("_2"):
+            parts.append(f"<i>{line.strip('_')}</i>")
             break
-    summary.append("")
+    parts.append("")
+
+    # 2. Our metrics — find @eddytester row
+    metrics = section("Метрики за неделю")
+    our_row = next((l for l in metrics if "@eddytester" in l), None)
+    if our_row and "|" in our_row:
+        cols = [c.strip() for c in our_row.split("|")]
+        # cols: channel, posts, avg_views, avg_engage, notable
+        if len(cols) >= 5:
+            parts.append(f"<b>📈 @eddytester:</b> {cols[1]} постов, "
+                         f"средние просмотры {cols[2]}, вовлечение {cols[3]}")
+            parts.append("")
 
     # 3. Best format
-    in_formats = False
-    for line in lines:
-        if "Анализ форматов" in line:
-            in_formats = True
-            continue
-        if in_formats and line.startswith("**Лучший"):
-            summary.append(f"🏆 {line.strip('*')}")
-            # Next non-empty line is confidence follow-up
-            continue
-        if in_formats and line.startswith("✅") or line.startswith("📊") or line.startswith("🔬"):
-            summary.append(f"  {line}")
-            summary.append("")
-            break
+    fmt = section("Анализ форматов")
+    best_fmt = next((l for l in fmt if l.startswith("**Лучший формат")), None)
+    if best_fmt:
+        clean = best_fmt.replace("**Лучший формат:**", "").strip()
+        parts.append(f"<b>🏆 Лучший формат:</b> {clean}")
+        follow = next((l for l in fmt if l.startswith("✅") or l.startswith("📊") or l.startswith("🔬")), None)
+        if follow:
+            parts.append(f"  {follow}")
+        best_day = next((l for l in fmt if l.startswith("**Лучший день")), None)
+        if best_day:
+            parts.append(f"  {best_day}")
+        best_time = next((l for l in fmt if l.startswith("**Лучшее время")), None)
+        if best_time:
+            parts.append(f"  {best_time}")
+        parts.append("")
 
-    # 4. Engagement quality (compact)
-    in_eq = False
-    eq_lines = []
-    for line in lines:
-        if "Качество вовлечения" in line:
-            in_eq = True
-            continue
-        if in_eq:
-            if line.startswith("---") or line.startswith("## 🔍"):
-                break
-            if line.startswith("- ") or line.startswith("**Тип") or line.startswith("→"):
-                eq_lines.append(line)
-    if eq_lines:
-        summary.append("💬 *Вовлечение:*")
-        summary.extend(eq_lines[:4])
-        summary.append("")
+    # 4. Engagement quality — compact
+    eq = section("Качество вовлечения")
+    eq_types = [l for l in eq if l.startswith("- ")]
+    eq_conclusion = [l for l in eq if l.startswith("**Тип") or l.startswith("→")]
+    if eq_types:
+        parts.append(f"<b>💬 Вовлечение:</b>")
+        parts.extend(eq_types[:2])
+        if eq_conclusion:
+            parts.append(eq_conclusion[0][:100])
+            if len(eq_conclusion) > 1:
+                parts.append(eq_conclusion[1][:100])
+        parts.append("")
 
-    # 5. Top recommendation
-    in_recs = False
-    rec_lines = []
-    for line in lines:
-        if "Рекомендации на неделю" in line:
-            in_recs = True
-            continue
-        if in_recs:
-            if line.startswith("---") or line.startswith("## 📸"):
-                break
-            if line and not line.startswith("_"):
-                rec_lines.append(line)
-    if rec_lines:
-        summary.append("🎯 *Рекомендации:*")
-        for rl in rec_lines[:8]:
-            summary.append(rl)
-        summary.append("")
+    # 5. Notable posts — top 3
+    notable = section("Notable посты недели")
+    notable_items = [l for l in notable if l.startswith("- ")]
+    if notable_items:
+        parts.append(f"<b>⭐ Notable:</b>")
+        for ni in notable_items[:3]:
+            # Extract channel and reason
+            parts.append(f"  {ni.strip()[:120]}")
+        parts.append("")
 
-    # 6. Footer with charts note + link
-    summary.append(f"_Всего {len(review.get('charts', []))} графиков — прикреплены выше_")
-    summary.append(f"_Полный обзор: Стратегия/Анализ/Weekly/{_week_number()}.md_")
+    # 6. Recommendations — top 3 lines
+    recs = section("Рекомендации на неделю")
+    rec_items = [l for l in recs if l.startswith("### ")]
+    if rec_items:
+        parts.append(f"<b>🎯 Рекомендации:</b>")
+        for ri in rec_items[:3]:
+            clean = ri.replace("### ", "").strip()
+            parts.append(f"  • {clean}")
+        parts.append("")
 
-    return "\n".join(summary)
+    # 7. Footer
+    parts.append(f"<i>📸 {len(review.get('charts', []))} графика — прикреплены выше</i>")
+
+    return "\n".join(parts)
 
 
 def main():
@@ -785,7 +818,7 @@ def main():
 
             # Send concise review (fits in TG, ~4K chars)
             summary = get_longread_summary(review)
-            send_message(summary)
+            send_message(summary, parse_mode="HTML")
 
             # Send charts as photos with captions
             for i, cp in enumerate(review.get("charts", [])):
