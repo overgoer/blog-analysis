@@ -169,6 +169,28 @@ def _fmt(n):
     return str(n)
 
 
+def _custom_metrics_block(vals: dict) -> str:
+    """Append custom metrics as additional output lines."""
+    from runtime_config import get_custom_metrics
+    metrics = get_custom_metrics()
+    if not metrics:
+        return ""
+    lines = []
+    for m in metrics:
+        try:
+            # Safe: formula can reference keys in vals dict
+            formula = m["formula"]
+            safe = formula
+            for k, v in vals.items():
+                safe = safe.replace(k, str(v))
+            result = eval(safe, {"__builtins__": {}}, {"round": round, "max": max, "min": min, "abs": abs,
+                                                       "float": float, "int": int})
+            lines.append(f"  • {m['name']}: {_fmt(round(result, 2) if isinstance(result, float) else result)}")
+        except Exception:
+            lines.append(f"  • {m['name']}: ошибка вычисления")
+    return "\n".join(lines)
+
+
 def query_channel_metrics(channel_name: str, days: int = 7) -> str:
     """Bizzy tool: get avg views/forwards/replies/engagement for a channel."""
     import db
@@ -191,8 +213,16 @@ def query_channel_metrics(channel_name: str, days: int = 7) -> str:
             return f"Нет данных для {channel_name} за последние {days} дн."
 
         d = dict(row)
+        from channel_goals import SUBSCRIBERS
         engage = d["avg_v"] + d["avg_r"] * 3 + d["avg_f"] * 5
-        return (
+
+        from runtime_config import get_custom_metrics
+        custom = _custom_metrics_block({
+            "avg_views": d["avg_v"], "avg_forwards": d["avg_f"], "avg_replies": d["avg_r"],
+            "posts": d["posts"], "subscribers": SUBSCRIBERS.get(channel_name, 0),
+            "notable": d["notable"],
+        })
+        result = (
             f"📊 {channel_name} за {days} дн:\n"
             f"  • Постов: {d['posts']}\n"
             f"  • Средние просмотры: {_fmt(round(d['avg_v']))}\n"
@@ -201,6 +231,9 @@ def query_channel_metrics(channel_name: str, days: int = 7) -> str:
             f"  • Среднее вовлечение: {_fmt(round(engage))}\n"
             f"  • Notable: {d['notable']}"
         )
+        if custom:
+            result += "\n" + custom
+        return result
     finally:
         conn.close()
 
@@ -318,6 +351,107 @@ def query_competitor_comparison(days: int = 7) -> str:
                 f"  {r['channel']:<20}{marker} {r['posts']:>6} {_fmt(round(r['avg_v'])):>8} "
                 f"{_fmt(round(engage)):>8} {reach:>8} {r['notable']:>7}"
             )
+        return "\n".join(lines)
+    finally:
+        conn.close()
+
+
+def query_content_profile(days: int = 7) -> str:
+    """Bizzy tool: compare topic categories across ALL channels — what each channel posts about."""
+    import db
+    conn = db.get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT c.name as channel,
+                   p.category,
+                   COUNT(*) as posts
+            FROM posts p
+            JOIN channels c ON p.channel_id = c.id
+            WHERE p.posted_at >= datetime('now', ?) AND c.active = 1
+            GROUP BY c.id, p.category
+            ORDER BY c.name, COUNT(*) DESC
+        """, (f"-{days} days",)).fetchall()
+        if not rows:
+            return f"Нет данных за {days} дн."
+
+        channels = {}
+        cats_set = set()
+        for r in rows:
+            ch = r["channel"]
+            cat = r["category"] or "other"
+            channels.setdefault(ch, {})[cat] = r["posts"]
+            cats_set.add(cat)
+
+        all_cats = sorted(cats_set)
+        lines = [f"📂 Контент-профиль каналов за {days} дн:", ""]
+        header = f"  {'Канал':<20}"
+        for c in all_cats:
+            header += f" {c:<14}"
+        header += "  Всего"
+        lines.append(header)
+        lines.append(f"  {'─'*20} {'─'*14}" * len(all_cats) + " ───")
+
+        for ch, cats in sorted(channels.items()):
+            total = sum(cats.values())
+            row = f"  {ch:<20}"
+            for c in all_cats:
+                cnt = cats.get(c, 0)
+                pct = f"{cnt*100//total}%" if total else ""
+                row += f" {pct:>14}"
+            row += f" {total:>4}"
+            lines.append(row)
+
+        return "\n".join(lines)
+    finally:
+        conn.close()
+
+
+def query_goal_profile(days: int = 7) -> str:
+    """Bizzy tool: compare post INTENT (goal) distribution across all channels."""
+    import db
+    conn = db.get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT c.name as channel,
+                   p.goal,
+                   COUNT(*) as posts
+            FROM posts p
+            JOIN channels c ON p.channel_id = c.id
+            WHERE p.posted_at >= datetime('now', ?) AND c.active = 1
+                  AND p.goal != 'other' AND p.goal != ''
+            GROUP BY c.id, p.goal
+            ORDER BY c.name, COUNT(*) DESC
+        """, (f"-{days} days",)).fetchall()
+        if not rows:
+            return "Нет данных по целям постов. Запусти categorizer.py на сервере."
+
+        channels = {}
+        goals_set = set()
+        for r in rows:
+            ch = r["channel"]
+            goal = r["goal"]
+            channels.setdefault(ch, {})[goal] = r["posts"]
+            goals_set.add(goal)
+
+        all_goals = sorted(goals_set)
+        lines = [f"🎯 Целевой профиль каналов за {days} дн:", ""]
+        header = f"  {'Канал':<20}"
+        for g in all_goals:
+            header += f" {g:<12}"
+        header += "  Всего"
+        lines.append(header)
+        lines.append(f"  {'─'*20} {'─'*12}" * len(all_goals) + " ───")
+
+        for ch, goals in sorted(channels.items()):
+            total = sum(goals.values())
+            row = f"  {ch:<20}"
+            for g in all_goals:
+                cnt = goals.get(g, 0)
+                pct = f"{cnt*100//total}%" if total else ""
+                row += f" {pct:>12}"
+            row += f" {total:>4}"
+            lines.append(row)
+
         return "\n".join(lines)
     finally:
         conn.close()

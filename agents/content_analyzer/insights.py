@@ -73,26 +73,31 @@ def _call_deepseek(text: str, context: str = "", media_type: str = "text") -> di
 
 def _get_category(text: str) -> str:
     """Keyword-based category detection."""
-    from config import CATEGORY_KEYWORDS
-    text_lower = text.lower()
-    for cat, keywords in CATEGORY_KEYWORDS.items():
-        for kw in keywords:
-            if kw.lower() in text_lower:
-                return cat
-    return "other"
+    from categorizer import classify_topic
+    return classify_topic(text)
+
+
+def _get_goal(text: str) -> str:
+    """Keyword-based goal/intent detection."""
+    from categorizer import classify_goal
+    return classify_goal(text)
 
 
 def analyze_channel(channel_id: int, channel_name: str, posts: list, category_map: dict = None) -> list:
     """Analyze posts: classify, rank by engagement, DeepSeek top percentile."""
-    from db import mark_notable, get_posts_for_analysis
+    from db import mark_notable, update_post_goal
 
     if not posts:
         return []
 
-    # Classify all posts
+    # Classify all posts by topic AND goal
     for p in posts:
+        text = p.get("text", "")
         if not p.get("category") or p["category"] == "other":
-            p["category"] = _get_category(p.get("text", ""))
+            p["category"] = _get_category(text)
+        if not p.get("goal") or p["goal"] == "other":
+            p["goal"] = _get_goal(text)
+            update_post_goal(p["id"], p["goal"])
 
     # Rank by engagement
     ranked = sorted(posts, key=_compute_engagement, reverse=True)

@@ -559,6 +559,70 @@ def tool_query_post_trend(channel, days=14):
     except Exception as e:
         return f"Query error: {e}"
 
+def tool_query_content_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_content_profile
+        return query_content_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_goal_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_goal_profile
+        return query_goal_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_category_add_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_keyword
+        return add_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_remove_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_keyword
+        return remove_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_list_overrides():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_overrides
+        return list_overrides()
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_add(name, formula, description=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_custom_metric
+        return add_custom_metric(name, formula, description)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_remove(name):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_custom_metric
+        return remove_custom_metric(name)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_list():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_custom_metrics
+        return list_custom_metrics()
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
 
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
@@ -727,6 +791,64 @@ TOOLS = [{"type": "function", "function": {
         "channel": {"type": "string"},
         "days": {"type": "integer", "description": "Days to look back (default 14)"}
     }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_content_profile",
+    "description": "Compare topic categories across ALL channels — what % of posts falls into each topic (api/bugs, tools, career, etc.). Example: query_content_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_goal_profile",
+    "description": "Compare post INTENT (прогрев, экспертиза, продажа, hot_take, news, meta) across ALL channels. Shows which channels warm up, sell, or educate. Example: query_goal_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "category_add_keyword",
+    "description": "Add a keyword to a category. category_type: CATEGORY_KEYWORDS (topic) or GOAL_KEYWORDS (intent). Example: category_add_keyword CATEGORY_KEYWORDS api/bugs restassured",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_remove_keyword",
+    "description": "Remove a keyword override from a category.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_list_overrides",
+    "description": "Show all category keyword overrides.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_add",
+    "description": "Add a custom metric. Formula can use: avg_views, avg_forwards, avg_replies, subscribers, posts, notable. Example: custom_metric_add engagement_rate 'avg_views / NULLIF(subscribers, 0)' 'Views per subscriber'",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"},
+        "formula": {"type": "string", "description": "Python expression using: avg_views, avg_forwards, avg_replies, subscribers, posts, notable"},
+        "description": {"type": "string"}
+    }, "required": ["name", "formula"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_remove",
+    "description": "Remove a custom metric by name.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"}
+    }, "required": ["name"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_list",
+    "description": "List all custom metrics.",
+    "parameters": {"type": "object", "properties": {}}
 }}
 ]
 
@@ -745,7 +867,15 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "query_top_posts": tool_query_top_posts,
             "query_category_performance": tool_query_category_performance,
             "query_competitor_comparison": tool_query_competitor_comparison,
-            "query_post_trend": tool_query_post_trend}
+            "query_post_trend": tool_query_post_trend,
+            "query_content_profile": tool_query_content_profile,
+            "query_goal_profile": tool_query_goal_profile,
+            "category_add_keyword": tool_category_add_keyword,
+            "category_remove_keyword": tool_category_remove_keyword,
+            "category_list_overrides": tool_category_list_overrides,
+            "custom_metric_add": tool_custom_metric_add,
+            "custom_metric_remove": tool_custom_metric_remove,
+            "custom_metric_list": tool_custom_metric_list}
 
 
 def build_prompt():

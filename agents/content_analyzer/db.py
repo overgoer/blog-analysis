@@ -14,6 +14,22 @@ def get_conn():
     return conn
 
 
+def migrate_db():
+    """Add new columns that may not exist in older DBs."""
+    conn = get_conn()
+    try:
+        # Add goal column if not exists
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(posts)").fetchall()]
+        if "goal" not in cols:
+            conn.execute("ALTER TABLE posts ADD COLUMN goal TEXT DEFAULT 'other'")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_goal ON posts(goal)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        conn.close()
+
+
 def init_db():
     conn = get_conn()
     conn.executescript("""
@@ -78,6 +94,7 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+    migrate_db()
 
 
 def add_channel(name):
@@ -266,6 +283,77 @@ def search_posts_by_text(query, limit=10):
         """
         like = f"%{query}%"
         return [dict(r) for r in conn.execute(q, (like, limit)).fetchall()]
+    finally:
+        conn.close()
+
+
+def update_post_goal(post_id, goal):
+    """Set the goal (intent) category for a post."""
+    conn = get_conn()
+    conn.execute("UPDATE posts SET goal = ?, updated_at = datetime('now') WHERE id = ?", (goal, post_id))
+    conn.commit()
+    conn.close()
+
+
+def get_uncategorized_posts(limit=500):
+    """Get posts missing category or goal classification."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT p.*, c.name as channel_name
+            FROM posts p
+            JOIN channels c ON p.channel_id = c.id
+            WHERE (p.category IS NULL OR p.category = '' OR p.category = 'other'
+                   OR p.goal IS NULL OR p.goal = '' OR p.goal = 'other')
+            ORDER BY p.posted_at DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_category_distribution(days=7, channel_id=None):
+    """Get topic category post counts & avg engagement, optionally per channel."""
+    conn = get_conn()
+    try:
+        q = """
+            SELECT p.category,
+                   COUNT(*) as posts,
+                   COALESCE(AVG(p.views), 0) as avg_v,
+                   COALESCE(AVG(p.forwards), 0) as avg_f,
+                   COALESCE(AVG(p.replies_count), 0) as avg_r
+            FROM posts p
+            WHERE p.posted_at >= datetime('now', ?)
+        """
+        params = [f"-{days} days"]
+        if channel_id:
+            q += " AND p.channel_id = ?"
+            params.append(channel_id)
+        q += " GROUP BY p.category ORDER BY COUNT(*) DESC"
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def get_goal_distribution(days=7, channel_id=None):
+    """Get intent (goal) category post counts & avg engagement, optionally per channel."""
+    conn = get_conn()
+    try:
+        q = """
+            SELECT p.goal,
+                   COUNT(*) as posts,
+                   COALESCE(AVG(p.views), 0) as avg_v,
+                   COALESCE(AVG(p.forwards), 0) as avg_f,
+                   COALESCE(AVG(p.replies_count), 0) as avg_r
+            FROM posts p
+            WHERE p.goal != 'other' AND p.posted_at >= datetime('now', ?)
+        """
+        params = [f"-{days} days"]
+        if channel_id:
+            q += " AND p.channel_id = ?"
+            params.append(channel_id)
+        q += " GROUP BY p.goal ORDER BY COUNT(*) DESC"
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
     finally:
         conn.close()
 
