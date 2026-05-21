@@ -77,7 +77,7 @@ def export_replies(chat, post_id):
     # Find the discussion thread message for this channel post
     thread_msg_id = None
     for m in messages:
-        fwd = m.get("raw", {}).get("FwdFrom", {})
+        fwd = (m.get("raw") or {}).get("FwdFrom", {})
         if fwd and fwd.get("ChannelPost") == post_id:
             thread_msg_id = m.get("id")
             break
@@ -88,7 +88,7 @@ def export_replies(chat, post_id):
     # Collect replies to that thread
     comments = []
     for m in messages:
-        reply_to = m.get("raw", {}).get("ReplyTo", {})
+        reply_to = (m.get("raw") or {}).get("ReplyTo", {})
         if reply_to and reply_to.get("ReplyToMsgID") == thread_msg_id:
             comments.append(m)
 
