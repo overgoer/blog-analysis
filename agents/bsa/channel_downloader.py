@@ -74,12 +74,12 @@ def find_post(chat, target_id):
         await client.start()
         try:
             entity = await client.get_entity(chat)
-            msgs = await client.get_messages(entity, ids=target_id)
-            if not msgs or not msgs[0]:
+            msg = await client.get_messages(entity, ids=target_id)
+            if msg is None:
                 return {"error": f"Post #{target_id} not found"}
-            d = _msg_to_dict(msgs[0], chat=chat)
-            if msgs[0].replies and msgs[0].replies.channel_id:
-                d["_replies_channel_id"] = msgs[0].replies.channel_id
+            d = _msg_to_dict(msg, chat=chat)
+            if msg.replies and msg.replies.channel_id:
+                d["_replies_channel_id"] = msg.replies.channel_id
             return d
         finally:
             await client.disconnect()
@@ -98,8 +98,7 @@ def fetch_comments(post_chat, post_id):
         try:
             # Get the post to find discussion group
             entity = await client.get_entity(post_chat)
-            post_msg = await client.get_messages(entity, ids=post_id)
-            msg = post_msg[0] if post_msg else None
+            msg = await client.get_messages(entity, ids=post_id)
             if not msg:
                 return {"error": f"Post #{post_id} not found"}
             if not msg.replies or not msg.replies.channel_id:
