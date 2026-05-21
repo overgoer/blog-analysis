@@ -10,7 +10,7 @@ Principy:
 """
 
 import hashlib
-
+import json
 import os
 import re
 import subprocess
@@ -25,6 +25,7 @@ LOCK_FILE = Path('/tmp/requests_listener.lock')
 LOG_FILE = Path('/tmp/requests_listener.log')
 AGENTS_DIR = Path('/root/blog-analysis/agents')
 BSA_CHAT = AGENTS_DIR / 'bsa' / 'bsa_chat.py'
+TG_OUTGOING = AGENTS_DIR / 'bsa' / 'outgoing'
 
 def log(msg):
     ts = datetime.now().strftime('%H:%M:%S')
@@ -83,6 +84,17 @@ def read_hash():
 def write_hash(h):
     with open(HASH_FILE, 'w') as f:
         f.write(h)
+
+def push_to_telegram(text):
+    """Queue text for Telegram via bot's outgoing/ directory."""
+    try:
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:20]
+        msg = {"text": text, "created_at": datetime.now().isoformat(), "retries": 0, "failed": False}
+        (TG_OUTGOING / f"out_{ts}.json").write_text(json.dumps(msg, ensure_ascii=False))
+        return True
+    except Exception as e:
+        log(f"push_to_telegram failed: {e}")
+        return False
 
 
 def find_tasks_in_text(text):
@@ -185,7 +197,7 @@ def _main(dry_run):
             log('BSA trigger completed successfully')
             if result.stdout:
                 log(f'BSA output (last 200): {result.stdout.strip()[-200:]}')
-                # BSA pushes its own response to Telegram via _push_to_telegram
+                push_to_telegram(result.stdout.strip())
         else:
             log(f'BSA trigger failed (exit={result.returncode}): {result.stderr[:300]}')
             return
@@ -201,7 +213,7 @@ def _main(dry_run):
             log('BSA discuss completed successfully')
             if result.stdout:
                 log(f'BSA discuss output: {result.stdout.strip()[-200:]}')
-                # BSA pushes its own response to Telegram via _push_to_telegram
+                push_to_telegram(result.stdout.strip())
         else:
             log(f'BSA discuss failed (exit={result.returncode}): {result.stderr[:300]}')
             return
