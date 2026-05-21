@@ -9,26 +9,38 @@ TDL = "/usr/local/bin/tdl"
 
 
 def _parse_tdl_post(msg: dict) -> Optional[dict]:
-    """Parse a tdl 0.20.2 message dict into our schema."""
+    """Parse a tdl 0.20.2 message (--raw mode) into our schema."""
     try:
-        msg_id = msg.get("id", 0)
+        raw = msg.get("raw", msg)
+        msg_id = raw.get("ID", 0) or raw.get("id", 0)
         if not msg_id:
             return None
 
-        text = msg.get("text", "") or ""
-        media_type = "photo" if msg.get("file") else "text"
-
-        posted_at = msg.get("date", "")
+        text = raw.get("Message", "") or ""
+        posted_at = raw.get("Date", "")
         if isinstance(posted_at, (int, float)):
             posted_at = datetime.utcfromtimestamp(posted_at).isoformat()
+
+        views = raw.get("Views", 0) or 0
+        forwards = raw.get("Forwards", 0) or 0
+
+        replies_raw = raw.get("Replies")
+        replies_count = 0
+        if isinstance(replies_raw, dict):
+            replies_count = replies_raw.get("Replies", 0) or 0
+
+        media = raw.get("Media")
+        media_type = "text"
+        if isinstance(media, dict) and media.get("Photo"):
+            media_type = "photo"
 
         return {
             "tg_post_id": msg_id,
             "posted_at": posted_at,
             "text": text.strip()[:1000],
-            "views": msg.get("views", 0) or 0,
-            "forwards": msg.get("forwards", 0) or 0,
-            "replies_count": 0,
+            "views": views,
+            "forwards": forwards,
+            "replies_count": replies_count,
             "media_type": media_type,
         }
     except Exception:
@@ -36,12 +48,12 @@ def _parse_tdl_post(msg: dict) -> Optional[dict]:
 
 
 def export_messages(channel: str, limit: int = 50) -> list:
-    """Export messages from a Telegram channel via tdl 0.20.2."""
+    """Export messages from a Telegram channel via tdl 0.20.2 (--raw mode)."""
     tmp = tempfile.mktemp(suffix=".json")
     try:
         cmd = [TDL, "chat", "export", "-c", channel,
                "--type", "last", "--input", str(limit),
-               "--output", tmp, "--with-content"]
+               "--output", tmp, "--raw"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(f"tdl error: {result.stderr[:500]}")
