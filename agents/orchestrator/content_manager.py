@@ -548,7 +548,7 @@ def save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_resul
         return None
 
 
-def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None):
+def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None, api_suggestions=None):
     """Send digest email via mailer with HTML formatting (old + new style)."""
     subject = f"Дайджест Оркестратора: {topic[:50]}"
     html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
@@ -780,9 +780,27 @@ def main():
     print(f"\n── Post Draft (new style) ──\n{post_draft_new}")
     print(f"\n── Brief saved: {brief_path}")
 
+    # Phase 5.5: Check API Bridge suggestions
+    log("Phase 5.5: Checking API Bridge suggestions...")
+    api_suggestions = []
+    suggestions_dir = Path("/root/obsidian-vault/eddytester/Стратегия")
+    for f in sorted(suggestions_dir.glob("API_SUGGESTIONS_*.md"), reverse=True)[:3]:
+        try:
+            text = f.read_text()
+            # Extract suggestion titles
+            titles = re.findall(r'^## \d+\.\s*(.+)$', text, re.MULTILINE)
+            if titles:
+                api_suggestions.append({"file": f.name, "titles": titles, "text": text[:1000]})
+        except Exception:
+            pass
+    if api_suggestions:
+        log(f"  Found {len(api_suggestions)} suggestion files")
+    else:
+        log("  No recent API suggestions")
+
     if send_email_flag:
         new_cmds = get_new_commands()
-        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path, analyzed_wishlist, new_cmds)
+        send_email(topic, ga_verdict, post_draft_old, post_draft_new, brief_path, analyzed_wishlist, new_cmds, api_suggestions)
 
     # Mark topic as researched
     data["researched"].append({"topic": topic, "date": datetime.now().strftime("%Y-%m-%d")})
