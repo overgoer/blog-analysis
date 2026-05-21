@@ -116,7 +116,10 @@ async def get_comments(client, post_msg, source_channel=""):
 async def run_check(posts=1, post_id=None, url=None, with_comments=False):
     """Main logic: fetch post(s) and return formatted text."""
     client = TelegramClient(SESSION, API_ID, API_HASH)
-    await client.start()
+    try:
+        await client.start()
+    except Exception as e:
+        return f"❌ Ошибка подключения Telegram: {e}"
 
     try:
         if url:
@@ -127,7 +130,12 @@ async def run_check(posts=1, post_id=None, url=None, with_comments=False):
             if not target_post_id:
                 return "❌ Укажите номер поста в URL"
 
-            msg = await client.get_messages(chat, ids=target_post_id)
+            try:
+                msg = await client.get_messages(chat, ids=target_post_id)
+            except ValueError as e:
+                return f"❌ Канал {chat} не найден: {e}"
+            except Exception as e:
+                return f"❌ Ошибка доступа к {chat}: {e}"
             if not msg:
                 return f"❌ Пост {target_post_id} не найден в {chat}"
 
@@ -148,7 +156,10 @@ async def run_check(posts=1, post_id=None, url=None, with_comments=False):
             return "\n\n---\n\n".join(result)
 
         elif post_id is not None:
-            msg = await client.get_messages(CHANNEL, ids=post_id)
+            try:
+                msg = await client.get_messages(CHANNEL, ids=post_id)
+            except Exception as e:
+                return f"❌ Ошибка доступа к каналу: {e}"
             if not msg:
                 return f"❌ Пост {post_id} не найден"
 
@@ -169,7 +180,10 @@ async def run_check(posts=1, post_id=None, url=None, with_comments=False):
             return "\n\n---\n\n".join(result)
 
         else:
-            msgs = await client.get_messages(CHANNEL, limit=posts)
+            try:
+                msgs = await client.get_messages(CHANNEL, limit=posts)
+            except Exception as e:
+                return f"❌ Ошибка доступа к каналу: {e}"
             if not msgs:
                 return "❌ Нет постов"
             return "\n\n---\n\n".join(format_post(m) for m in msgs)
