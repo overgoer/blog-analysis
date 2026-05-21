@@ -369,7 +369,7 @@ def _push_to_telegram(text):
 
 
 def tool_check_channel(query):
-    """Check @eddytester channel posts. Usage: "latest" or "post 414" or "post 414 comments"."""
+    """Check Telegram channel posts. Usage: "latest", "post 414", "post 414 comments", or any t.me URL."""
     try:
         import subprocess, os
         base = "/root/blog-analysis/agents/bsa"
@@ -377,6 +377,12 @@ def tool_check_channel(query):
         parts = query.strip().split()
         if not parts:
             cmd.extend(["--posts", "1"])
+        elif parts[0].startswith("http") or parts[0].startswith("t.me"):
+            # URL-based lookup: extract URL, check for comments flag
+            url = parts[0]
+            cmd.extend(["--url", url])
+            if "comments" in parts or "comment" in parts:
+                cmd.append("--comments")
         elif parts[0] == "latest":
             count = parts[1] if len(parts) > 1 and parts[1].isdigit() else "1"
             cmd.extend(["--posts", str(count)])
@@ -752,7 +758,7 @@ TOOLS = [{"type": "function", "function": {
     }, "required": ["old_text", "new_text"]}
 }}, {"type": "function", "function": {
     "name": "check_channel",
-    "description": "Check @eddytester channel: \"latest\", \"latest 3\", \"post 414\", \"post 414 comments\"",
+    "description": "Check @eddytester channel or any t.me URL. Usage: \"latest\", \"latest 3\", \"post 414\", \"post 414 comments\", or paste a t.me/username/123 link",
     "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
 }}, {"type": "function", "function": {
     "name": "download_channel",
