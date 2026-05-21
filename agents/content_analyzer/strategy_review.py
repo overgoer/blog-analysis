@@ -595,7 +595,7 @@ def _build_recommendations(gaps: list, fmt_perf: list, eq: dict, goals_review: l
 
 def _build_notable_summary() -> str:
     """Brief notable post summary — only last 7 days."""
-    notable_posts = db.get_notable_posts(limit=5, days=7)
+    notable_posts = db.get_notable_posts(limit=5)
     if not notable_posts:
         return ""
 

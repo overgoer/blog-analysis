@@ -167,14 +167,19 @@ def upsert_post(channel_id, tg_post_id, posted_at, text, views, forwards, replie
         return True
 
 
-def get_posts_for_analysis(channel_id, limit=50, include_notable=False):
+def get_posts_for_analysis(channel_id, limit=50, include_notable=False, days=None):
     conn = get_conn()
     try:
         q = "SELECT * FROM posts WHERE channel_id = ?"
+        params = [channel_id]
+        if days:
+            q += " AND posted_at >= datetime('now', ?)"
+            params.append(f"-{days} days")
         if not include_notable:
             q += " AND notable = 0"
         q += " ORDER BY tg_post_id DESC LIMIT ?"
-        return [dict(r) for r in conn.execute(q, (channel_id, limit)).fetchall()]
+        params.append(limit)
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
     finally:
         conn.close()
 

@@ -39,7 +39,7 @@ def run():
     total_notable = 0
     for ch in channels:
         try:
-            posts = get_posts_for_analysis(ch["id"], limit=50)
+            posts = get_posts_for_analysis(ch["id"], limit=50, days=7)
             notable = analyze_channel(ch["id"], ch["name"], posts)
             total_notable += len(notable)
         except Exception as e:
