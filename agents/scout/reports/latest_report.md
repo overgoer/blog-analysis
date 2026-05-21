@@ -1,138 +1,139 @@
-# SCOUT Report | 2026-05-13
+# SCOUT Report | 2026-05-21
 
 ## Competitor Activity Overview
 
 | Channel | Posts | Top Categories |
 |---------|-------|-----------------|
-| qabigtech | 15 | engagement, practicum/portfolio, API |
-| qachanell | 15 | education, engagement, other |
-| burning_tester | 15 | career, education, engagement |
-| rvtsakunov | 15 | career, news, automation |
-| rvtsakunov_manual | 15 | career, engagement, other |
-| protestinginfo | 15 | other |
-| testerlib | 15 | engagement, bugs, AI/LLM |
-| serious_tester | 15 | engagement, career, other |
-| qa_and_it | 15 | career, other, bugs |
-| qa_chillout | 6 | engagement, API, career |
+| qabigtech | 15 | AI/LLM, engagement, API |
+| qachanell | 15 | API, guide, education |
+| burning_tester | 15 | career, API, bugs |
+| rvtsakunov | 15 | engagement, career, education |
+| rvtsakunov_manual | 15 | career, API, other |
+| protestinginfo | 15 | API, AI/LLM, engagement |
+| qa_chillout | 15 | API, engagement, automation |
+| testerlib | 15 | API, engagement, AI/LLM |
+| serious_tester | 15 | API, engagement, bugs |
+| qa_and_it | 15 | API, AI/LLM, bugs |
 
-> Note: tdl export does not provide view/forward counts. Analysis is category-based.
+> Note: view/forward counts not available via Telethon for private channels. Analysis is category-based.
 
 ## Category Distribution per Channel
 
 ### qabigtech
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 86.7%
 
 | Category | Count | % |
 |----------|-------|---|
-| engagement | 6 | 40.0% |
-| practicum/portfolio | 2 | 13.3% |
-| API | 2 | 13.3% |
+| AI/LLM | 4 | 26.7% |
+| engagement | 4 | 26.7% |
+| API | 3 | 20.0% |
 | education | 1 | 6.7% |
 | guide | 1 | 6.7% |
-| AI/LLM | 1 | 6.7% |
-| news | 1 | 6.7% |
+| practicum/portfolio | 1 | 6.7% |
 | bugs | 1 | 6.7% |
 
 ### qachanell
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 53.3%
 
 | Category | Count | % |
 |----------|-------|---|
-| education | 3 | 30.0% |
-| engagement | 3 | 30.0% |
-| other | 2 | 20.0% |
-| guide | 1 | 10.0% |
-| API | 1 | 10.0% |
+| API | 7 | 53.8% |
+| guide | 3 | 23.1% |
+| education | 2 | 15.4% |
+| engagement | 1 | 7.7% |
 
 ### burning_tester
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 93.3%
 
 | Category | Count | % |
 |----------|-------|---|
-| career | 8 | 53.3% |
+| career | 6 | 40.0% |
+| API | 2 | 13.3% |
+| bugs | 2 | 13.3% |
 | education | 2 | 13.3% |
-| engagement | 2 | 13.3% |
+| meme | 1 | 6.7% |
 | guide | 1 | 6.7% |
-| bugs | 1 | 6.7% |
 | other | 1 | 6.7% |
 
 ### rvtsakunov
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 33.3%
 
 | Category | Count | % |
 |----------|-------|---|
-| career | 4 | 66.7% |
-| news | 1 | 16.7% |
-| automation | 1 | 16.7% |
+| engagement | 8 | 61.5% |
+| career | 3 | 23.1% |
+| education | 1 | 7.7% |
+| news | 1 | 7.7% |
 
 ### rvtsakunov_manual
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 60.0%
 
 | Category | Count | % |
 |----------|-------|---|
-| career | 3 | 42.9% |
-| engagement | 2 | 28.6% |
-| other | 1 | 14.3% |
-| guide | 1 | 14.3% |
+| career | 5 | 50.0% |
+| API | 4 | 40.0% |
+| other | 1 | 10.0% |
 
 ### protestinginfo
+Total posts: 15 | Images: 93.3%
+
+| Category | Count | % |
+|----------|-------|---|
+| API | 2 | 50.0% |
+| AI/LLM | 1 | 25.0% |
+| engagement | 1 | 25.0% |
+
+### qa_chillout
 Total posts: 15 | Images: 100.0%
 
 | Category | Count | % |
 |----------|-------|---|
-| other | 1 | 100.0% |
+| API | 10 | 66.7% |
+| engagement | 3 | 20.0% |
+| automation | 1 | 6.7% |
+| AI/LLM | 1 | 6.7% |
 
 ### testerlib
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 66.7%
 
 | Category | Count | % |
 |----------|-------|---|
-| engagement | 6 | 42.9% |
-| bugs | 5 | 35.7% |
-| AI/LLM | 1 | 7.1% |
-| API | 1 | 7.1% |
-| automation | 1 | 7.1% |
+| API | 4 | 50.0% |
+| engagement | 2 | 25.0% |
+| AI/LLM | 1 | 12.5% |
+| career | 1 | 12.5% |
 
 ### serious_tester
 Total posts: 15 | Images: 100.0%
 
 | Category | Count | % |
 |----------|-------|---|
-| engagement | 6 | 42.9% |
-| career | 4 | 28.6% |
-| other | 2 | 14.3% |
-| education | 1 | 7.1% |
-| news | 1 | 7.1% |
+| API | 9 | 60.0% |
+| engagement | 2 | 13.3% |
+| bugs | 2 | 13.3% |
+| AI/LLM | 1 | 6.7% |
+| other | 1 | 6.7% |
 
 ### qa_and_it
-Total posts: 15 | Images: 100.0%
+Total posts: 15 | Images: 93.3%
 
 | Category | Count | % |
 |----------|-------|---|
-| career | 1 | 33.3% |
-| other | 1 | 33.3% |
-| bugs | 1 | 33.3% |
-
-### qa_chillout
-Total posts: 6 | Images: 100.0%
-
-| Category | Count | % |
-|----------|-------|---|
-| engagement | 4 | 66.7% |
-| API | 1 | 16.7% |
-| career | 1 | 16.7% |
+| API | 5 | 55.6% |
+| AI/LLM | 1 | 11.1% |
+| bugs | 1 | 11.1% |
+| other | 1 | 11.1% |
+| engagement | 1 | 11.1% |
 
 ## Content Gaps (vs eddytester)
 
 | Category | eddytester % | Competitor avg % | Gap |
 |----------|-------------|-----------------|-----|
-| career | 11.9% | 24.1% | +12.2% |
-| education | 0.0% | 5.7% | +5.7% |
+| API | 8.9% | 40.9% | +32.0% |
 
 ### Recommendations
 
-- **career** (gap +12.2%) -- У конкурентов в этой теме: работу, работы, компании, человек, рынок
-- **education** (gap +5.7%) -- У конкурентов в этой теме: меньше, обучения, материалы, курсы, спрос
+- **API** (gap +32.0%) -- У конкурентов в этой теме: разберём, такое, статье, через, тестирование
 
 ---
-*Report generated at 2026-05-13 09:00:13*
+*Report generated at 2026-05-21 19:22:34*
