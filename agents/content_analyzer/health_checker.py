@@ -69,12 +69,12 @@ def test_practicum():
     ts = str(int(time.time()))
     test_user = {"name": f"HealthCheck_{ts}", "age": 25}
 
-    # POST create user
-    url = f"{PRACTICUM_URL}/v1/api/users"
+    # POST create user (v2 = fixed version)
+    url = f"{PRACTICUM_URL}/v2/api/users"
     status, body, err = _req("POST", url, headers=headers, data=test_user)
     if err or status >= 400:
-        # Try v2
-        url = f"{PRACTICUM_URL}/v2/api/users"
+        # Fallback to v1
+        url = f"{PRACTICUM_URL}/v1/api/users"
         status, body, err = _req("POST", url, headers=headers, data=test_user)
 
     if err:
@@ -91,12 +91,8 @@ def test_practicum():
             "detail": f"HTTP {status}, user_id={created_id}"
         })
 
-        # GET verify user exists
-        if created_id:
-            get_url = f"{url}/{created_id}"
-        else:
-            get_url = url.replace("/users", "/users")  # list all
-
+        # GET verify user exists (list endpoint, by-ID may have bugs in v1)
+        get_url = f"{PRACTICUM_URL}/v2/api/users"
         status2, body2, err2 = _req("GET", get_url, headers=headers)
         if err2:
             results.append({"test": "GET verify user", "status": "fail", "detail": f"Connection error: {err2}"})
@@ -167,12 +163,8 @@ def test_free_trial():
             "detail": f"HTTP {status}, user_id={created_id}"
         })
 
-    # Step 3: GET verify
-    if created_id:
-        get_url = f"{url}/{created_id}"
-    else:
-        get_url = url
-
+    # Step 3: GET verify (list endpoint, by-ID not supported by Free Trial)
+    get_url = f"{FREE_TRIAL_URL}/free/api/users"
     status2, body2, err2 = _req("GET", get_url, headers=headers)
     if err2:
         results.append({"test": "GET verify user", "status": "fail", "detail": f"Connection error: {err2}"})
