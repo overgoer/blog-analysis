@@ -18,9 +18,10 @@ from config import CATEGORY_KEYWORDS, GOAL_KEYWORDS
 
 
 def _merged_keywords(category_type: str, base: dict) -> dict:
-    """Merge runtime keyword overrides with base config."""
-    from runtime_config import get_keyword_overrides
+    """Merge runtime keyword overrides with base config, excluding suppressed keywords."""
+    from runtime_config import get_keyword_overrides, get_suppressed_keywords
     merged = {k: list(v) for k, v in base.items()}
+    # Add runtime overrides
     overrides = get_keyword_overrides(category_type)
     for cat, extra_kws in overrides.items():
         if cat in merged:
@@ -29,6 +30,12 @@ def _merged_keywords(category_type: str, base: dict) -> dict:
                     merged[cat].append(kw)
         else:
             merged[cat] = list(extra_kws)
+    # Remove suppressed keywords
+    suppressed = get_suppressed_keywords(category_type)
+    for cat, sup_kws in suppressed.items():
+        if cat in merged:
+            for sk in sup_kws:
+                merged[cat] = [kw for kw in merged[cat] if kw.lower() != sk.lower()]
     return merged
 
 

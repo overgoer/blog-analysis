@@ -599,6 +599,22 @@ def tool_category_list_overrides():
     except Exception as e:
         return f"Runtime config error: {e}"
 
+def tool_category_suppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import suppress_keyword
+        return suppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_unsuppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import unsuppress_keyword
+        return unsuppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
 def tool_custom_metric_add(name, formula, description=""):
     try:
         import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
@@ -830,6 +846,24 @@ TOOLS = [{"type": "function", "function": {
     "parameters": {"type": "object", "properties": {}}
 }},
 {"type": "function", "function": {
+    "name": "category_suppress_keyword",
+    "description": "Suppress a base keyword from matching. Fixes false positives. Example: category_suppress_keyword CATEGORY_KEYWORDS api/bugs ошибк",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_unsuppress_keyword",
+    "description": "Remove a keyword from the suppression list.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
     "name": "custom_metric_add",
     "description": "Add a custom metric. Formula can use: avg_views, avg_forwards, avg_replies, subscribers, posts, notable. Example: custom_metric_add engagement_rate 'avg_views / NULLIF(subscribers, 0)' 'Views per subscriber'",
     "parameters": {"type": "object", "properties": {
@@ -873,6 +907,8 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "category_add_keyword": tool_category_add_keyword,
             "category_remove_keyword": tool_category_remove_keyword,
             "category_list_overrides": tool_category_list_overrides,
+            "category_suppress_keyword": tool_category_suppress_keyword,
+            "category_unsuppress_keyword": tool_category_unsuppress_keyword,
             "custom_metric_add": tool_custom_metric_add,
             "custom_metric_remove": tool_custom_metric_remove,
             "custom_metric_list": tool_custom_metric_list}

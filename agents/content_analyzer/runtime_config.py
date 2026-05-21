@@ -14,6 +14,7 @@ CONFIG_FILE = DATA_DIR / "runtime_config.json"
 
 DEFAULT = {
     "category_overrides": {},    # {"CATEGORY_KEYWORDS": {"api/bugs": ["kw1", "kw2"]}, "GOAL_KEYWORDS": {...}}
+    "suppressed_keywords": {},   # {"CATEGORY_KEYWORDS": {"api/bugs": ["ошибк"]}} — remove from base config
     "custom_metrics": [],        # [{"name": "er", "formula": "avg_views / NULLIF(subscribers, 0)", "description": "..."}]
 }
 
@@ -45,6 +46,12 @@ def get_keyword_overrides(category_type: str) -> dict:
     return cfg.get("category_overrides", {}).get(category_type, {})
 
 
+def get_suppressed_keywords(category_type: str) -> dict:
+    """Get keywords to remove from base config. {category: [keyword, ...]}"""
+    cfg = load()
+    return cfg.get("suppressed_keywords", {}).get(category_type, {})
+
+
 def add_keyword(category_type: str, category: str, keyword: str) -> str:
     """Add a keyword to a category. category_type: CATEGORY_KEYWORDS or GOAL_KEYWORDS."""
     cfg = load()
@@ -71,17 +78,55 @@ def remove_keyword(category_type: str, category: str, keyword: str) -> str:
     return f"ℹ️ Ключевое слово «{keyword}» не найдено в {category_type}.{category}"
 
 
-def list_overrides() -> str:
-    """List all keyword overrides."""
+def suppress_keyword(category_type: str, category: str, keyword: str) -> str:
+    """Suppress a base keyword from matching. Removes it from the live keyword list."""
     cfg = load()
+    suppressed = cfg.setdefault("suppressed_keywords", {})
+    cat_suppressed = suppressed.setdefault(category_type, {})
+    kws = cat_suppressed.setdefault(category, [])
+    if keyword.lower() not in [k.lower() for k in kws]:
+        kws.append(keyword)
+        save(cfg)
+    return f"✅ Ключевое слово «{keyword}» подавлено в {category_type}.{category}"
+
+
+def unsuppress_keyword(category_type: str, category: str, keyword: str) -> str:
+    """Remove a keyword from the suppression list."""
+    cfg = load()
+    suppressed = cfg.get("suppressed_keywords", {})
+    cat_suppressed = suppressed.get(category_type, {})
+    kws = cat_suppressed.get(category, [])
+    before = len(kws)
+    cat_suppressed[category] = [k for k in kws if k.lower() != keyword.lower()]
+    if len(cat_suppressed[category]) < before:
+        save(cfg)
+        return f"✅ Подавление «{keyword}» снято в {category_type}.{category}"
+    return f"ℹ️ Подавление «{keyword}» не найдено."
+
+
+def list_overrides() -> str:
+    """List all keyword overrides AND suppressions."""
+    cfg = load()
+    lines = []
     overrides = cfg.get("category_overrides", {})
-    if not overrides:
+    if overrides:
+        lines.append("📋 Добавленные ключевые слова:")
+        for ctype, cats in overrides.items():
+            lines.append(f"  {ctype}:")
+            for cat, kws in cats.items():
+                if kws:
+                    lines.append(f"    {cat}: {', '.join(kws)}")
+    suppressed = cfg.get("suppressed_keywords", {})
+    if suppressed:
+        lines.append("")
+        lines.append("🚫 Подавленные ключевые слова:")
+        for ctype, cats in suppressed.items():
+            lines.append(f"  {ctype}:")
+            for cat, kws in cats.items():
+                if kws:
+                    lines.append(f"    {cat}: {', '.join(kws)}")
+    if not lines:
         return "📭 Нет переопределений категорий."
-    lines = ["📋 Переопределения категорий:"]
-    for ctype, cats in overrides.items():
-        lines.append(f"\n  {ctype}:")
-        for cat, kws in cats.items():
-            lines.append(f"    {cat}: {', '.join(kws)}")
     return "\n".join(lines)
 
 
