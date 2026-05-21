@@ -519,6 +519,46 @@ def tool_analyzer_strategy_review():
     except Exception as e:
         return f"Analyzer error: {e}"
 
+def tool_query_channel_metrics(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_channel_metrics
+        return query_channel_metrics(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_top_posts(channel, limit=5, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_top_posts
+        return query_top_posts(channel, limit, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_category_performance(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_category_performance
+        return query_category_performance(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_competitor_comparison(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_competitor_comparison
+        return query_competitor_comparison(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_post_trend(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_post_trend
+        return query_post_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
 
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
@@ -647,6 +687,46 @@ TOOLS = [{"type": "function", "function": {
     "name": "analyzer_strategy_review",
     "description": "Generate a weekly strategic review with charts — per-channel metrics, format analysis with confidence, competitor gaps, and recommendations",
     "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_channel_metrics",
+    "description": "Get avg views/forwards/replies/engagement/notable for a channel over N days. Returns clean numbers. Example: query_channel_metrics @qachanell 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string", "description": "Channel @username"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_top_posts",
+    "description": "Get top posts by engagement for a channel. Returns post text, views, forwards, replies. Example: query_top_posts @eddytester 5 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "limit": {"type": "integer", "description": "Number of top posts (default 5)"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_category_performance",
+    "description": "Breakdown of posts by category for a channel — posts count, avg views, forwards, replies, notable per category. Example: query_category_performance @eddytester 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_competitor_comparison",
+    "description": "Compare ALL active channels side by side — posts, avg views, engagement, reach rate, notable count. No channel param needed. Example: query_competitor_comparison 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_post_trend",
+    "description": "Daily average views trend with ASCII bar chart for a channel. Example: query_post_trend @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
 }}
 ]
 
@@ -660,7 +740,12 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "analyzer_channel_stats": tool_analyzer_channel_stats, "analyzer_notable": tool_analyzer_notable,
             "analyzer_search": tool_analyzer_search, "analyzer_report": tool_analyzer_report,
             "analyzer_list_channels": tool_analyzer_list_channels,
-            "analyzer_strategy_review": tool_analyzer_strategy_review}
+            "analyzer_strategy_review": tool_analyzer_strategy_review,
+            "query_channel_metrics": tool_query_channel_metrics,
+            "query_top_posts": tool_query_top_posts,
+            "query_category_performance": tool_query_category_performance,
+            "query_competitor_comparison": tool_query_competitor_comparison,
+            "query_post_trend": tool_query_post_trend}
 
 
 def build_prompt():
