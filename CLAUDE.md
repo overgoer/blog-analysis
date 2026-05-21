@@ -186,6 +186,21 @@ Discord-формат в inbox/outbox:
 | Bitwarden env | `/root/.bw_env` |
 | Telegram secrets | `/root/blog-analysis/agents/bsa/.tg_token`, `.../.tg_chat_id` |
 
+### Сервер Hermes (77.73.135.110)
+
+Сервер для Hermes-агента (Timeweb, 8GB RAM, 4 ядра, Ubuntu 24.04).
+
+| Что | Путь |
+|---|---|
+| Hermes бот | `/root/hermes/hermes_bot.py` (systemd, `hermes.service`) |
+| Скилы | `/root/hermes/skills/*.md` |
+| Health DB | `/root/hermes/health.db` (SQLite) |
+| Honcho | `/root/honcho/` (Docker Compose, порт 8001) |
+| Java программа | `/root/obsidian-vault/eddytester/Java/` (18 недель) |
+| Java код | `/root/java-learning/` |
+
+SSH: `ssh root@77.73.135.110` (пароль в Bitwarden)
+
 ### Cron (crontab -l)
 
 | Расписание | Команда |
@@ -253,5 +268,11 @@ python3 agents/email_digest.py --send
 ## Что не входит в этот репозиторий
 
 - **Obsidian vault** (`/root/obsidian-vault/`) — отдельный git
-- **java-tutor** (`/root/java-tutor/`) — другой проект (упоминается в crontab)
+- **java-tutor** (`/root/java-tutor/`) — другой проект (упоминается в crontab), теперь заменён Hermes
+- **Hermes** (`/root/hermes/`) — Telegram AI-агент на DeepSeek v4, 16 инструментов, systemd
+  - `hermes_bot.py` — основной код (Python, python-telegram-bot)
+  - `health_db.py` — SQLite для здоровья (7 таблиц)
+  - `hermes_honcho.py` — Honcho memory integration (Docker, порт 8001)
+  - `skills/` — контекстные скилы (.md)
+- **Honcho** (`/root/honcho/`) — Memory server (Plastic Labs, Docker Compose, порт 8001)
 - **Продукты** (v0-test-api, free-trial-api, api-practicum-bot) — Node.js проекты на Timeweb

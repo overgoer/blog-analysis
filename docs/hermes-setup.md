@@ -40,15 +40,16 @@ Memory-инфраструктура для AI-агентов. Хранит ис�
 docker compose -f /root/honcho/docker-compose.yml up -d
 ```
 
-- **Порты:** localhost:8000 (непубличный)
+- **Порты:** localhost:8001 (непубличный, 8000 занят blog-analysis webhook)
 - **Сервисы:** Honcho API, Deriver (background worker), PostgreSQL (pgvector), Redis (cache)
-- **LLM:** DeepSeek chat для reasoning, OpenRouter (text-embedding-3-small) для эмбеддингов
-- **Интеграция:** `honcho-ai` SDK в Hermes — пишет сообщения, получает контекст
+- **LLM:** DeepSeek chat для reasoning (OpenAI-compatible, `api.deepseek.com/v1`)
+- **Эмбеддинги:** отключены (`EMBED_MESSAGES=false`) — OpenRouter/Cloudflare недоступен с Timeweb
+- **Интеграция:** `honcho-ai` SDK → `hermes_honcho.py` — пишет сообщения, получает контекст
 
 ### Провайдеры
 
-- **Reasoning:** DeepSeek (ключ из /root/hermes/.env)
-- **Embeddings:** OpenRouter → OpenAI text-embedding-3-small (~$0.06/мес)
+- **Reasoning:** DeepSeek chat (ключ из /root/hermes/.env)
+- **Embeddings:** отключены (BM25 текстовый поиск вместо векторного)
 
 ## Установка и обслуживание
 
@@ -82,6 +83,7 @@ journalctl -u hermes -n 50 --no-pager
 | Путь | Назначение |
 |---|---|
 | `/root/hermes/hermes_bot.py` | Основной код бота |
+| `/root/hermes/hermes_honcho.py` | Honcho memory integration |
 | `/root/hermes/skills/*.md` | Контекстные скилы |
 | `/root/hermes/health.db` | Данные здоровья (SQLite) |
 | `/root/hermes/lib/charts.py` | Pillow-графики |
