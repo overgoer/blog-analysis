@@ -14,7 +14,7 @@ Channel Checker — читает посты из Telegram каналов чер�
 """
 
 import asyncio, sys, re
-from datetime import datetime, timezone
+from datetime import datetime
 
 from telethon import TelegramClient
 

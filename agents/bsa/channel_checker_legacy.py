@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Channel Checker — читает последние посты из @eddytester и комментарии.
+Channel Checker (Legacy, tdl) — читает посты из @eddytester через tdl.
 
-Использование:
-    python3 channel_checker.py                    # последний пост
-    python3 channel_checker.py --posts 3          # последние 3 поста
-    python3 channel_checker.py --post 414         # конкретный пост
-    python3 channel_checker.py --post 414 --comments  # пост + комментарии
+LEGACY: заменён на Telethon-версию (channel_checker.py).
+Оставлен для справки и для SCOUT/content_analyzer.
+
+Использование (не рекомендуется для @eddytester):
+    python3 channel_checker_legacy.py                    # последний пост
+    python3 channel_checker_legacy.py --posts 3          # последние 3 поста
+    python3 channel_checker_legacy.py --post 414         # конкретный пост
+    python3 channel_checker_legacy.py --post 414 --comments  # пост + комментарии
 """
 
 import json, subprocess, sys
