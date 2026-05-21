@@ -43,13 +43,16 @@ docker compose -f /root/honcho/docker-compose.yml up -d
 - **Порты:** localhost:8001 (непубличный, 8000 занят blog-analysis webhook)
 - **Сервисы:** Honcho API, Deriver (background worker), PostgreSQL (pgvector), Redis (cache)
 - **LLM:** DeepSeek chat для reasoning (OpenAI-compatible, `api.deepseek.com/v1`)
-- **Эмбеддинги:** отключены (`EMBED_MESSAGES=false`) — OpenRouter/Cloudflare недоступен с Timeweb
+- **Эмбеддинги:** BGE-small-en-v1.5 (self-hosted, dim=384)
+  - `/root/embed-env/embed_server.py` — FastAPI + sentence-transformers
+  - systemd `embed-server.service` на порту 8888
+  - Docker-контейнеры подключаются через `host.docker.internal:8888` (ufw правило для порта 8888)
 - **Интеграция:** `honcho-ai` SDK → `hermes_honcho.py` — пишет сообщения, получает контекст
 
 ### Провайдеры
 
 - **Reasoning:** DeepSeek chat (ключ из /root/hermes/.env)
-- **Embeddings:** отключены (BM25 текстовый поиск вместо векторного)
+- **Embeddings:** BGE-small-en-v1.5 (self-hosted, systemd, порт 8888)
 
 ## Установка и обслуживание
 
@@ -92,3 +95,4 @@ journalctl -u hermes -n 50 --no-pager
 | `/root/obsidian-vault/eddytester/` | Obsidian vault |
 | `/root/java-learning/` | Java-примеры и код |
 | `/etc/systemd/system/hermes.service` | systemd unit |
+| `/root/embed-env/embed_server.py` | Embed-сервер (BGE-small) |

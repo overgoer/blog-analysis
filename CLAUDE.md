@@ -188,7 +188,7 @@ Discord-формат в inbox/outbox:
 
 ### Сервер Hermes (77.73.135.110)
 
-Сервер для Hermes-агента (Timeweb, 8GB RAM, 4 ядра, Ubuntu 24.04).
+Сервер для Hermes-агента (Aeza, 8GB RAM, 4 ядра, Ubuntu 24.04).
 
 | Что | Путь |
 |---|---|
@@ -196,6 +196,7 @@ Discord-формат в inbox/outbox:
 | Скилы | `/root/hermes/skills/*.md` |
 | Health DB | `/root/hermes/health.db` (SQLite) |
 | Honcho | `/root/honcho/` (Docker Compose, порт 8001) |
+| Embed server | `/root/embed-env/embed_server.py` (systemd, `embed-server.service`, порт 8888) |
 | Java программа | `/root/obsidian-vault/eddytester/Java/` (18 недель) |
 | Java код | `/root/java-learning/` |
 
