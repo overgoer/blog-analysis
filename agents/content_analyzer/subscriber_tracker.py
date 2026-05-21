@@ -38,18 +38,18 @@ def load_token():
 
 
 def get_member_count(chat_id: str) -> int | None:
-    """Fetch subscriber count via Bot API getChat."""
+    """Fetch subscriber count via Bot API getChatMemberCount."""
     token = load_token()
     if not token:
         print("ERROR: No TG_BOT_TOKEN")
         return None
-    url = f"https://api.telegram.org/bot{token}/getChat?chat_id={chat_id}"
+    url = f"https://api.telegram.org/bot{token}/getChatMemberCount?chat_id={chat_id}"
     try:
         req = Request(url)
         resp = urlopen(req, timeout=15)
         data = json.loads(resp.read())
         if data.get("ok"):
-            return data["result"].get("members_count") or data["result"].get("subscriber_count")
+            return data["result"]
         print(f"API error for {chat_id}: {data.get('description', 'unknown')}")
         return None
     except (URLError, json.JSONDecodeError, OSError) as e:

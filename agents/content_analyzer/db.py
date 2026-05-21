@@ -379,7 +379,7 @@ def log_subscriber_count(channel_id, subscribers):
             INSERT INTO subscriber_log (channel_id, date, subscribers)
             VALUES (?, ?, ?)
             ON CONFLICT(channel_id, date) DO UPDATE SET subscribers = excluded.subscribers
-        """, (channel_id, subscribers, today))
+        """, (channel_id, today, subscribers))
         conn.commit()
     finally:
         conn.close()
