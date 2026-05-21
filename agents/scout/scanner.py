@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """SCOUT Agent — Nightly Competitor Monitor.
-NOTE: tdl export does not provide views/forwards. Analysis is category-based.
+
+NOTE: Uses Telethon (not tdl) for message fetching.
+Views/forwards not available via Telethon for private channels.
+Analysis is category-based.
 """
 
 import json
-import subprocess
 import os
 import re
 import sys
@@ -26,10 +28,6 @@ SCOUT_HUB_FILE = os.path.join(OBSIDIAN_DIR, "Стратегия", "SCOUT.md")
 
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(RAW_DIR, exist_ok=True)
-
-TDL = "/usr/local/bin/tdl"
-TDL_TIMEOUT = 90
-
 
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -54,33 +52,38 @@ def load_eddytester_posts():
 
 
 def run_tdl_export(channel_id, count=15):
-    """Export posts from a channel using tdl. Returns path to output file."""
+    """Export posts from a channel via Telethon (replaces tdl). Returns path to output file."""
+    import asyncio
+    from telethon import TelegramClient
+
     out_file = os.path.join(RAW_DIR, f"{channel_id}.json")
-    cmd = [
-        TDL, "chat", "export",
-        "--type", "last",
-        "--with-content",
-        "-c", channel_id,
-        "-i", str(count),
-        "-o", out_file,
-        "--pool", "1",
-        "--delay", "200ms"
-    ]
-    log(f"  tdl export -c {channel_id} -j {count}")
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=TDL_TIMEOUT)
-        if r.returncode != 0:
-            log(f"  WARN: tdl exit code {r.returncode}: {r.stderr[200]}")
-            return None
-        if os.path.exists(out_file) and os.path.getsize(out_file) > 10:
+    log(f"  telethon fetch -c {channel_id} -n {count}")
+
+    async def _fetch():
+        client = TelegramClient("/root/.telethon_edtext", 5, "1c5c96d5edd401b1ed40db3fb5633e2d")
+        await client.start()
+        try:
+            entity = await client.get_entity(channel_id)
+            messages = await client.get_messages(entity, limit=count)
+            result = {"messages": []}
+            for msg in messages:
+                entry = {"id": msg.id, "text": msg.text or ""}
+                if msg.photo or msg.video or msg.document:
+                    entry["file"] = True
+                result["messages"].append(entry)
+            with open(out_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False)
             return out_file
-        log(f"  WARN: output empty or missing")
-        return None
-    except subprocess.TimeoutExpired:
-        log(f"  ERROR: tdl timed out after {TDL_TIMEOUT}s")
-        return None
+        except Exception as e:
+            log(f"  ERROR: Telethon fetch failed for {channel_id}: {e}")
+            return None
+        finally:
+            await client.disconnect()
+
+    try:
+        return asyncio.run(_fetch())
     except Exception as e:
-        log(f"  ERROR: {e}")
+        log(f"  ERROR: Telethon: {e}")
         return None
 
 
@@ -102,7 +105,7 @@ def load_tdl_output(filepath):
 
 
 def extract_text(post):
-    """Extract clean text from a tdl post."""
+    """Extract clean text from a post (Telethon JSON format)."""
     text = post.get("text", "")
     if isinstance(text, list):
         parts = []
@@ -156,7 +159,7 @@ def categorize_post(text):
 
 
 def analyze_competitor(posts, channel_info):
-    """Analyze a single competitor's posts (category-based only, tdl has no views)."""
+    """Analyze a single competitor's posts (category-based only)."""
     total = len(posts)
     if total == 0:
         return {"total": 0, "error": "no posts"}
@@ -168,7 +171,7 @@ def analyze_competitor(posts, channel_info):
     for t in non_empty:
         categories[categorize_post(t)] += 1
 
-    # Note: tdl export does not include views or forwards
+    # Note: views/forwards not available via Telethon for private channels
     cat_pct = {}
     for cat, count in categories.most_common():
         cat_pct[cat] = {"count": count, "pct": round(count / len(non_empty) * 100, 1) if non_empty else 0}
@@ -297,7 +300,7 @@ def generate_report(competitor_results, gaps, date_str):
         lines.append(f"| {ch} | {r['total']} | {top_str} |")
 
     lines.append("")
-    lines.append("> Note: tdl export does not provide view/forward counts. Analysis is category-based.")
+    lines.append("> Note: view/forward counts not available via Telethon for private channels. Analysis is category-based.")
     lines.append("")
 
     lines.append("## Category Distribution per Channel")
