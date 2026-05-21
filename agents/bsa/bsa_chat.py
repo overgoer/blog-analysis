@@ -22,6 +22,7 @@ CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
 CONTEXT_FILE = OBSIDIAN_STRAT / "_КОНТЕКСТ.md"
+STRAT_FILE = OBSIDIAN_STRAT / "_СТРАТЕГИЯ.md"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
 INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
 OUTBOX_FILE = Path("/root/obsidian-vault/outbox.md")
@@ -960,6 +961,8 @@ def build_prompt():
         except: pass
     if CONTEXT_FILE.exists():
         extra.append(f"\n\n## Твой контекст (ты можешь его обновлять write_file):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува Эдди):\n{STRAT_FILE.read_text(encoding='utf-8')}")
     files = list(OBSIDIAN_STRAT.glob("*.md")) if OBSIDIAN_STRAT.exists() else []
     if files: extra.append(f"\nStrategy files: {', '.join(f.name for f in files)}")
     return p + "\n".join(extra)
@@ -1013,6 +1016,8 @@ def trigger_mode():
         except: pass
     if CONTEXT_FILE.exists():
         extra.append(f"\n\n## Твой контекст (обновляй его write_file когда узнаёшь новые факты):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува):\n{STRAT_FILE.read_text(encoding='utf-8')}")
     strat_dir = OBSIDIAN_STRAT
     sfiles = list(strat_dir.glob("*.md")) if strat_dir.exists() else []
     if sfiles:
