@@ -22,14 +22,14 @@ from urllib.error import URLError
 BASE = Path(__file__).resolve().parent
 
 # ── Config ─────────────────────────────────────────────────────────────
-PRACTICUM_URL = os.environ.get("PRACTICUM_URL", "http://85.193.81.51:8080")  # Production server
-FREE_TRIAL_URL = os.environ.get("FREE_TRIAL_URL", "http://localhost:3001")  # Server-local or Timeweb
+PRACTICUM_URL = os.environ.get("PRACTICUM_URL", "http://85.193.81.51:3000")  # Timeweb server
+FREE_TRIAL_URL = os.environ.get("FREE_TRIAL_URL", "http://85.193.81.51:3001")  # Timeweb server
 
 OBSIDIAN_VAULT = Path("/root/obsidian-vault/eddytester/Стратегия")
 HEALTH_FILE = OBSIDIAN_VAULT / "_ХЕЛС_СТАТУС.md"
 
 # Auth
-PRACTICUM_KEY = "test-key-123"
+PRACTICUM_KEY = "test-api-key-123"
 
 GREEN = "🟢"
 RED = "🔴"
