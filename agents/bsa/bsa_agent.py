@@ -716,6 +716,21 @@ def run_weekly_audit(dry_run=False):
         thread["last_message_id"] = msg_id
         save_thread(thread)
 
+    # ── API-контентный мост ──
+    log("Running API-Content Bridge...")
+    try:
+        import subprocess as _sp_bridge
+        bridge_result = _sp_bridge.run(
+            [sys.executable, str(BASE / "bsa_api_bridge.py"), "--quick"],
+            capture_output=True, text=True, timeout=120,
+        )
+        for line in bridge_result.stdout.strip().split(chr(10)):
+            log(f"  [bridge] {line}")
+        if bridge_result.stderr.strip():
+            log(f"  [bridge stderr] {bridge_result.stderr.strip()[:500]}")
+    except Exception as bridge_err:
+        log(f"  [bridge] ERROR: {bridge_err}")
+
     log("=== BSA WEEKLY AUDIT COMPLETE ===")
     return True
 
