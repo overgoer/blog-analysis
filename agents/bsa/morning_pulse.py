@@ -35,6 +35,54 @@ now = datetime.now()
 today = date.today()
 weekday = today.weekday()  # 0=mon
 
+
+def _parse_cal_date(raw: str):
+    """Parse calendar date like 'ПН 18.05' or '**ПН 18.05**' into (day_name, day_month_str)."""
+    clean = raw.strip().replace("*", "").replace("|", "").strip()
+    # Some entries are just day name without date
+    parts = clean.split()
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    if len(parts) == 1:
+        return parts[0], ""
+    return "", ""
+
+
+def _load_backlog():
+    """Load backlog.json for status cross-reference."""
+    bf = BASE / "backlog.json"
+    if bf.exists():
+        try:
+            return json.loads(bf.read_text())
+        except (json.JSONDecodeError, Exception):
+            return None
+    return None
+
+
+def _status_emoji(s: str) -> str:
+    s = s.lower().strip()
+    if s in ("done", "✅", "готов", "опубликован"):
+        return "✅"
+    if s in ("in_progress", "🔄", "в работе"):
+        return "🔄"
+    if s in ("pending", "⬜", "запланирован"):
+        return "⬜"
+    return "⬜"
+
+
+def _match_backlog(topic: str, backlog: dict) -> str:
+    """Check if a topic matches a backlog item."""
+    if not backlog or not topic:
+        return ""
+    items = backlog.get("items", []) if isinstance(backlog, dict) else backlog
+    if isinstance(items, list):
+        for item in items:
+            title = (item.get("title", "") if isinstance(item, dict) else str(item)).lower()
+            if topic.lower()[:20] in title or title[:20] in topic.lower():
+                s = item.get("status", "") if isinstance(item, dict) else ""
+                return _status_emoji(s)
+    return ""
+
 # ── Greetings ──────────────────────────────────────────────────────────
 
 GREETINGS = {
@@ -94,7 +142,7 @@ def read_calendar() -> Optional[list]:
     for line in content.split("\n"):
         # Match: | ПН 18.05 or | **ПН 18.05**
         clean = line.strip().replace("*", "").replace("|", "").strip()
-        if clean.startswith(weekday_ru) and date_str in clean:
+        if clean.upper().startswith(weekday_ru) and date_str in clean:
             parts = [p.strip().replace("*", "") for p in line.split("|")]
             parts = [p for p in parts if p]
             # Skip header lines
@@ -113,29 +161,40 @@ def read_calendar() -> Optional[list]:
 
 
 def read_this_week_calendar() -> list:
-    """Read all entries for this week from Календарь.md."""
+    """Read all entries for this week from Календарь.md with date filtering."""
     cal_file = STRAT_DIR / "Календарь.md"
     if not cal_file.exists():
         return []
 
     content = cal_file.read_text(encoding="utf-8")
-    entries = []
 
-    # Find this week section
+    # Determine this week's date range
     week_start = today - __import__("datetime").timedelta(days=weekday)
     week_end = week_start + __import__("datetime").timedelta(days=6)
+    mon = week_start.day
+    sun = week_end.day
+    month_num = week_start.month
+
+    entries = []
 
     for line in content.split("\n"):
         if line.strip().startswith("|") and "Дата" not in line and "---" not in line:
             parts = [p.strip() for p in line.split("|")]
             parts = [p for p in parts if p]
             if len(parts) >= 6:
-                entries.append({
-                    "raw": line,
-                    "date": parts[0],
-                    "topic": parts[5] if len(parts) > 5 else "",
-                    "status": parts[-1] if len(parts) > 1 else "",
-                })
+                day_name, day_month = _parse_cal_date(parts[0])
+                # Filter by date within this week
+                try:
+                    entry_day = int(day_month.split(".")[0])
+                except (ValueError, IndexError):
+                    entry_day = 0
+                if entry_day == 0 or mon <= entry_day <= sun:
+                    entries.append({
+                        "raw": line,
+                        "date": parts[0],
+                        "topic": parts[5] if len(parts) > 5 else "",
+                        "status": parts[-1] if len(parts) > 1 else "",
+                    })
 
     return entries
 
@@ -158,8 +217,8 @@ def read_latest_scout() -> Optional[str]:
     return None
 
 
-def read_strategy_focus() -> Optional[str]:
-    """Extract current focus from strategy v6."""
+def read_strategy_focus():
+    """Extract current focus from strategy v6 and cross-reference with backlog."""
     strategy_files = sorted(STRAT_DIR.glob("BSA_STRATEGY_v6_*.md"))
     if not strategy_files:
         strategy_files = sorted(STRAT_DIR.glob("BSA_STRATEGY_*.md"))
@@ -186,6 +245,15 @@ def read_strategy_focus() -> Optional[str]:
                 break
             if line.strip().startswith("1.") or line.strip().startswith("2.") or line.strip().startswith("3.") or line.strip().startswith("4."):
                 critical.append(line.strip())
+
+    # Cross-reference with backlog for status
+    backlog = _load_backlog()
+    if backlog and critical:
+        enriched = []
+        for c in critical:
+            emoji = _match_backlog(c, backlog)
+            enriched.append(f"{emoji} {c}" if emoji else c)
+        critical = enriched
 
     return {"bets": bets, "critical": critical}
 
@@ -297,14 +365,16 @@ def build_pulse():
     # 3. Week overview (upcoming)
     week_entries = read_this_week_calendar()
     if week_entries:
-        pending = [e for e in week_entries if "готов" not in e.get("status", "").lower() and "опубликован" not in e.get("status", "").lower() and "✅" not in e.get("status", "")]
+        published = [e for e in week_entries if "опубликован" in e.get("status", "").lower() or "✅" in e.get("status", "")]
+        ready = [e for e in week_entries if "готов" in e.get("status", "").lower() and e not in published]
+        pending = [e for e in week_entries if e not in published and e not in ready]
+        lines.append(f"📋 *НЕДЕЛЯ:* {len(published)} опубликовано, {len(ready)} готово, {len(pending)} в работе")
         if pending:
-            lines.append(f"📋 *ЕЩЁ НА НЕДЕЛЕ:*")
             for p in pending[:3]:
                 topic_str = p.get("topic", "")[:60]
                 if topic_str:
                     lines.append(f"  • {topic_str}")
-            lines.append("")
+        lines.append("")
 
     # 4. Strategy / Practicum status
     focus = read_strategy_focus()

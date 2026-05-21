@@ -26,6 +26,9 @@ agents/scout/raw/
 agents/scout/reports/
 agents/scout/report_counter.txt
 
+# Content analyzer runtime data
+agents/content_analyzer/data/
+
 # Dev artifacts
 agents/dev/
 

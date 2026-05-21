@@ -448,6 +448,64 @@ def tool_propose_bug(endpoint, description, repo="api-practicum"):
     fpath.write_text(json.dumps(proposal, ensure_ascii=False, indent=2))
     return "Proposal {}: {} - {}".format(proposal["id"], endpoint, description[:100])
 
+
+def tool_analyzer_add_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import add_channel
+        return add_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_remove_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import remove_channel
+        return remove_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_channel_stats(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_channel_stats
+        return get_channel_stats(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_notable(category=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_notable_summary
+        return get_notable_summary(category if category else None)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_search(query):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import search_posts
+        return search_posts(query)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_report():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_daily_report
+        return get_daily_report()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_list_channels():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import list_channels
+        return list_channels()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -525,14 +583,64 @@ TOOLS = [{"type": "function", "function": {
         "description": {"type": "string"},
         "repo": {"type": "string", "enum": ["api-practicum", "free-trial-api", "api-practicum-bot"]}
     }, "required": ["endpoint", "description"]}
-}}]
+}},
+{"type": "function", "function": {
+    "name": "analyzer_add_channel",
+    "description": "Add a Telegram channel to the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_remove_channel",
+    "description": "Remove a Telegram channel from the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_channel_stats",
+    "description": "Get analytics stats for a specific channel",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_notable",
+    "description": "Get top notable posts (optionally filter by category)",
+    "parameters": {"type": "object", "properties": {
+        "category": {"type": "string"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_search",
+    "description": "Search posts by text across all monitored channels",
+    "parameters": {"type": "object", "properties": {
+        "query": {"type": "string"}
+    }, "required": ["query"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_report",
+    "description": "Get daily content analysis report",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_list_channels",
+    "description": "List all channels in the monitoring pool",
+    "parameters": {"type": "object", "properties": {}}
+}}
+]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
             "list_dir": tool_list_dir, "glob_files": tool_glob_files, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
-            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug}
+            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug,
+            "analyzer_add_channel": tool_analyzer_add_channel, "analyzer_remove_channel": tool_analyzer_remove_channel,
+            "analyzer_channel_stats": tool_analyzer_channel_stats, "analyzer_notable": tool_analyzer_notable,
+            "analyzer_search": tool_analyzer_search, "analyzer_report": tool_analyzer_report,
+            "analyzer_list_channels": tool_analyzer_list_channels}
 
 
 def build_prompt():
