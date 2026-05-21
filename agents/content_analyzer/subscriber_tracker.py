@@ -18,7 +18,10 @@ from urllib.error import URLError
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from db import log_subscriber_count, get_channel_by_name, get_conn
+from db import log_subscriber_count, get_channel_by_name, init_db
+
+# Ensure subscriber_log table exists
+init_db()
 
 # Token source: same as telegram_bot.py
 TOKEN_FILE = BASE.parent / "bsa" / ".tg_token"
