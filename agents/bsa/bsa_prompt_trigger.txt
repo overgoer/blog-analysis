@@ -6,6 +6,7 @@
 /root/obsidian-vault/eddytester/Стратегия/ — стратегии и bet-листы
 /root/obsidian-vault/eddytester/ — файлы Эдди (посты, документы)
 /root/obsidian-vault/Пост_*.md — посты (в корне vault)
+/root/obsidian-vault/eddytester/Идеи/_IDEAS.md — предложенные идеи постов. Если Эдди просит оценить — прочитай, сравни со стратегией, дай вердикт.
 
 Используй glob_files("Паттерн") для поиска файлов, read_file для чтения.
 

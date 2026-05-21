@@ -38,6 +38,7 @@ ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
 ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT), str(Path("/root/obsidian-vault"))]
 ALLOWED_AGENTS = {"bsa": str(AGENTS_DIR / "bsa/bsa_agent.py"),
                   "pm": str(AGENTS_DIR / "orchestrator/pm_agent.py")}
+TG_OUTGOING = BASE / "outgoing"
 
 os.makedirs(LOG_FILE.parent, exist_ok=True)
 
@@ -350,6 +351,21 @@ def tool_discuss_reply(response_text):
         log("discuss_reply error: " + str(e))
         return "Error: " + str(e)
 
+
+def _push_to_telegram(text):
+    """Push a text message to the Telegram bot outgoing queue."""
+    if not text:
+        return
+    try:
+        os.makedirs(TG_OUTGOING, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:20]
+        (TG_OUTGOING / f"out_{ts}.json").write_text(json.dumps({
+            "text": text, "created_at": datetime.now().isoformat(),
+            "retries": 0, "failed": False,
+        }, ensure_ascii=False))
+        log(f"Pushed to Telegram outgoing: {len(text)} chars")
+    except Exception as e:
+        log(f"Telegram push failed: {e}")
 
 
 def tool_check_channel(query):
@@ -1016,10 +1032,35 @@ def run_conversation(messages):
             for tc in msg["tool_calls"]:
                 fn = tc["function"]
                 fn_name, args_str = fn["name"], fn["arguments"]
-                try: args = json.loads(args_str)
-                except: args = {}
+                try:
+                    args = json.loads(args_str)
+                except json.JSONDecodeError as e:
+                    log(f"Tool {fn_name}: bad args: {e}")
+                    messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                     "content": f"⚠️ Bizzy, я не смог разобрать аргументы для '{fn_name}': {e}. "
+                                                f"Проверь формат JSON и попробуй снова."})
+                    continue
+
                 log(f"Tool: {fn_name}")
-                result = TOOL_MAP.get(fn_name, lambda **_: f"Unknown tool: {fn_name}")(**args)
+
+                tool_fn = TOOL_MAP.get(fn_name)
+                if tool_fn is None:
+                    known = [k for k in TOOL_MAP.keys() if fn_name in k]
+                    hint = f"Возможно, ты имел в виду: {', '.join(known[:3])}?" if known else "Проверь название инструмента."
+                    messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                     "content": f"⚠️ Неизвестный инструмент: '{fn_name}'. {hint}"})
+                    continue
+
+                try:
+                    result = tool_fn(**args)
+                except TypeError as e:
+                    log(f"Tool {fn_name}: arg mismatch: {e}")
+                    result = (f"⚠️ Инструмент '{fn_name}' получил неправильные аргументы: {e}. "
+                              f"Проверь названия параметров и их типы.")
+                except Exception as e:
+                    log(f"Tool {fn_name} crashed: {e}")
+                    result = f"⚠️ Инструмент '{fn_name}' упал с ошибкой: {type(e).__name__}: {e}"
+
                 messages.append({"role": "tool", "tool_call_id": tc["id"],
                                  "content": str(result)[:10000]})
             continue
@@ -1083,6 +1124,7 @@ def trigger_mode():
     if resp:
         log(f"BSA trigger response: {resp[:300]}...")
         print(resp)
+        _push_to_telegram(resp)
     else:
         log("BSA trigger: completed (tool calls only)")
         print("BSA trigger: completed")
@@ -1145,19 +1187,22 @@ def discuss_mode(question):
         except Exception as e:
             log("Idempotency check failed (non-critical): " + str(e))
 
+    discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
+    discuss_prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+
     # For continue thread (\u044d\u044d): add history from outbox.md
     if not is_new_tread:
         try:
             if OUTBOX_FILE.exists():
                 outbox_history = OUTBOX_FILE.read_text(encoding="utf-8").strip()
                 if outbox_history:
+                    # Keep last 4000 chars to avoid blowing context window
+                    if len(outbox_history) > 4000:
+                        outbox_history = "...(\u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0440\u0435\u0437\u0430\u043d\u0430)...\n" + outbox_history[-4000:]
                     history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435.\n\u0412\u0410\u0416\u041d\u041e: \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043c\u043e\u0433 \u0441\u043c\u0435\u043d\u0438\u0442\u044c \u0442\u0435\u043c\u0443. \u0415\u0441\u043b\u0438 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u0440\u043e \u0434\u0440\u0443\u0433\u043e\u0435 \u2014 \u043e\u0442\u0432\u0435\u0447\u0430\u0439 \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441, \u043d\u0435 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0439\u0441\u044f \u043a \u0441\u0442\u0430\u0440\u043e\u0439 \u0442\u0435\u043c\u0435."
                     discuss_prompt_text += history_note
         except Exception as e:
             log("History read failed (non-critical): " + str(e))
-
-    discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
-    discuss_prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
 
     messages = [
         {"role": "system", "content": discuss_prompt_text},
@@ -1169,10 +1214,11 @@ def discuss_mode(question):
         log("BSA discuss response: " + resp[:300] + "...")
         # Check if BSA already called discuss_reply tool during conversation
         bsa_used_tool = any(
-            msg.get("role") == "assistant" and 
+            msg.get("role") == "assistant" and
             any(tc["function"]["name"] == "discuss_reply" for tc in msg.get("tool_calls", []))
             for msg in messages
         )
+        telegram_text = resp
         if not bsa_used_tool:
             try:
                 tool_discuss_reply(resp)
@@ -1181,7 +1227,19 @@ def discuss_mode(question):
                 log("Write to outbox.md failed: " + str(e))
         else:
             log("BSA already used discuss_reply tool, skipping auto-write")
+            # Extract actual Bizzy answer from outbox.md
+            try:
+                if OUTBOX_FILE.exists():
+                    outbox = OUTBOX_FILE.read_text(encoding="utf-8")
+                    for line in reversed(outbox.split("\n")):
+                        stripped = line.strip()
+                        if stripped.startswith("**Bizzy:**"):
+                            telegram_text = stripped[len("**Bizzy:**"):].strip()
+                            break
+            except Exception as e:
+                log("Extract Bizzy answer failed: " + str(e))
         print(resp)
+        _push_to_telegram(telegram_text)
     else:
         log("BSA discuss: completed (tool calls only)")
         print("BSA discuss: completed")

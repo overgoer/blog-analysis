@@ -11,6 +11,9 @@ python3 /root/blog-analysis/agents/scout/scanner.py >> "$LOG" 2>&1
 echo "--- EDUCATOR Agent ---" >> "$LOG"
 python3 /root/blog-analysis/agents/educator/educator.py daily >> "$LOG" 2>&1
 
+echo "--- Idea Review ---" >> "$LOG"
+python3 /root/blog-analysis/agents/bsa/idea_reviewer.py >> "$LOG" 2>&1
+
 echo "--- Email Digest ---" >> "$LOG"
 python3 /root/blog-analysis/agents/email_digest.py --send >> "$LOG" 2>&1
 

@@ -23,6 +23,7 @@ CHAT_ID_FILE = BASE / ".tg_chat_id"
 POLL_INTERVAL = 15
 INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
 DUMP_FILE = Path("/root/blog-analysis/agents/bsa/dump.md")
+IDEAS_FILE = Path("/root/obsidian-vault/eddytester/Идеи/_IDEAS.md")
 
 os.makedirs(OUTGOING, exist_ok=True)
 os.makedirs(INCOMING, exist_ok=True)
@@ -324,6 +325,7 @@ def handle_incoming(messages):
                 "/status — состояние очередей\n"
                 "/ping — проверка связи\n"
                 "/dump — записать мысль/идею\n"
+                "/post — предложить идею поста (Bizzy оценит)\n"
                 "/backlog — сводка бэклога\n"
                 "/bl — активные задачи\n"
                 "/bl done B-001 — завершить задачу\n"
@@ -339,6 +341,7 @@ def handle_incoming(messages):
                 "— Bizzy отвечает сюда + в Obsidian\n"
                 "/status — очередь\n"
                 "/dump — записать мысль\n"
+                "/post — предложить идею поста\n"
                 "/ping — pong"
             )
             continue
@@ -444,6 +447,21 @@ def handle_incoming(messages):
                     send_message("❌ Ошибка записи dump.")
             else:
                 send_message("Использование: /dump <твоя мысль>")
+            continue
+
+        if text == "/post" or text.startswith("/post "):
+            entry = text[6:].strip() if len(text) > 6 else ""
+            if entry:
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+                try:
+                    IDEAS_FILE.parent.mkdir(parents=True, exist_ok=True)
+                    with open(IDEAS_FILE, "a") as f:
+                        f.write(f"\n## {ts}\n{entry}\n")
+                    send_message("✅ Идея записана. Bizzy оценит в ночном обходе и скажет своё мнение.")
+                except OSError:
+                    send_message("❌ Ошибка записи идеи.")
+            else:
+                send_message("Использование: /post <описание идеи>\nМожно с буллитами, можно одной строкой.")
             continue
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
