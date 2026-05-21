@@ -16,7 +16,8 @@ def _fmt(n):
 
 def build_daily_report() -> str:
     """Build daily analysis report markdown."""
-    from db import get_aggregate_metrics, get_notable_posts
+    from db import get_aggregate_metrics, get_notable_posts, init_db
+    init_db()
 
     today = date.today().isoformat()
     metrics = get_aggregate_metrics(days=7)

@@ -31,6 +31,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
+from db import init_db
 from config import DEFAULT_CHANNELS
 from channel_goals import GOALS, PRIMARY_COMPETITORS, CONFIDENCE_THRESHOLDS, ENGAGEMENT_WEIGHTS
 
@@ -598,6 +599,7 @@ def _build_notable_summary() -> str:
 
 def build_review() -> dict:
     """Build full strategy review. Returns {markdown, charts:[paths]}."""
+    init_db()
     chart_paths = []
 
     # Fetch data

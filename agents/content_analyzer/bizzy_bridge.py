@@ -16,7 +16,11 @@ ANALYZER_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ANALYZER_DIR))
 
 import db
+from db import init_db
 from config import DEFAULT_CHANNELS
+
+# Ensure DB tables exist when Bizzy loads this module
+init_db()
 
 
 def add_channel(name: str) -> str:
