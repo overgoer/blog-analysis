@@ -105,12 +105,14 @@ def format_post(msg):
     forwards = raw.get("Forwards", 0)
     date_ts = raw.get("Date") or msg.get("date", 0)
     date_str = datetime.fromtimestamp(date_ts).strftime("%d.%m %H:%M") if date_ts else "?"
-    has_media = "Photo" in str(raw.get("Media", {})) or "Video" in str(raw.get("Media", {}))
-    comments = raw.get("Replies", {}).get("Comments", False)
-    reply_count = raw.get("Replies", {}).get("Replies", 0)
+    media = raw.get("Media") or {}
+    has_media = "Photo" in str(media) or "Video" in str(media)
+    replies = raw.get("Replies") or {}
+    comments = replies.get("Comments", False)
+    reply_count = replies.get("Replies", 0)
 
-    # Reactions
-    reactions = raw.get("Reactions", {})
+    # Reactions (can be None for new posts with 0 reactions)
+    reactions = raw.get("Reactions") or {}
     reacts = []
     for r in reactions.get("Results", []):
         emoji = r.get("Reaction", {}).get("Emoticon", "?")
