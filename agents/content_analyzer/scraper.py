@@ -1,80 +1,54 @@
 #!/usr/bin/env python3
-"""Scraper — Telegram channel scraper via tdl (tdl 0.20.2+)."""
-import json, subprocess, tempfile, os
+"""Scraper — Telegram channel scraper via Telethon (replaces tdl)."""
+import os, asyncio
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
-
-TDL = "/usr/local/bin/tdl"
-
-
-def _parse_tdl_post(msg: dict) -> Optional[dict]:
-    """Parse a tdl 0.20.2 message (--raw mode) into our schema."""
-    try:
-        raw = msg.get("raw", msg)
-        msg_id = raw.get("ID", 0) or raw.get("id", 0)
-        if not msg_id:
-            return None
-
-        text = raw.get("Message", "") or ""
-        posted_at = raw.get("Date", "")
-        if isinstance(posted_at, (int, float)):
-            posted_at = datetime.utcfromtimestamp(posted_at).isoformat()
-
-        views = raw.get("Views", 0) or 0
-        forwards = raw.get("Forwards", 0) or 0
-
-        replies_raw = raw.get("Replies")
-        replies_count = 0
-        if isinstance(replies_raw, dict):
-            replies_count = replies_raw.get("Replies", 0) or 0
-
-        media = raw.get("Media")
-        media_type = "text"
-        if isinstance(media, dict) and media.get("Photo"):
-            media_type = "photo"
-
-        return {
-            "tg_post_id": msg_id,
-            "posted_at": posted_at,
-            "text": text.strip()[:1000],
-            "views": views,
-            "forwards": forwards,
-            "replies_count": replies_count,
-            "media_type": media_type,
-        }
-    except Exception:
-        return None
 
 
 def export_messages(channel: str, limit: int = 50) -> list:
-    """Export messages from a Telegram channel via tdl 0.20.2 (--raw mode)."""
-    tmp = tempfile.mktemp(suffix=".json")
-    try:
-        cmd = [TDL, "chat", "export", "-c", channel,
-               "--type", "last", "--input", str(limit),
-               "--output", tmp, "--raw"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode != 0:
-            raise RuntimeError(f"tdl error: {result.stderr[:500]}")
+    """Export messages from a Telegram channel via Telethon."""
+    async def _fetch():
+        from telethon import TelegramClient
 
-        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
-            return []
-
-        data = json.loads(open(tmp, encoding="utf-8").read())
-        raw_messages = data.get("messages", [])
-
-        posts = []
-        for msg in raw_messages:
-            parsed = _parse_tdl_post(msg)
-            if parsed:
-                posts.append(parsed)
-        return posts
-    finally:
+        client = TelegramClient("/root/.telethon_edtext", 5, "1c5c96d5edd401b1ed40db3fb5633e2d")
+        await client.start()
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+            entity = await client.get_entity(channel)
+            messages = await client.get_messages(entity, limit=limit)
+            posts = []
+            for msg in messages:
+                if not msg:
+                    continue
+                msg_id = msg.id
+                posted_at = msg.date.isoformat() if msg.date else datetime.utcnow().isoformat()
+                text = (msg.text or "").strip()[:1000]
+                views = getattr(msg, "views", 0) or 0
+                forwards = getattr(msg, "forwards", 0) or 0
+                replies_count = msg.replies.replies if msg.replies else 0
+                media_type = "text"
+                if msg.photo:
+                    media_type = "photo"
+                elif msg.video:
+                    media_type = "video"
+                elif msg.document:
+                    media_type = "document"
+                posts.append({
+                    "tg_post_id": msg_id,
+                    "posted_at": posted_at,
+                    "text": text,
+                    "views": views,
+                    "forwards": forwards,
+                    "replies_count": replies_count,
+                    "media_type": media_type,
+                })
+            return posts
+        finally:
+            await client.disconnect()
+
+    try:
+        return asyncio.run(_fetch())
+    except Exception as e:
+        raise RuntimeError(f"Telethon export failed: {e}")
 
 
 def scrape_channel(channel_name: str) -> tuple:
