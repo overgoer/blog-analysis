@@ -23,6 +23,7 @@ PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
 CONTEXT_FILE = OBSIDIAN_STRAT / "_КОНТЕКСТ.md"
 STRAT_FILE = OBSIDIAN_STRAT / "_СТРАТЕГИЯ.md"
+HEALTH_FILE = OBSIDIAN_STRAT / "_ХЕЛС_СТАТУС.md"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
 INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
 OUTBOX_FILE = Path("/root/obsidian-vault/outbox.md")
@@ -584,6 +585,35 @@ def tool_query_subscriber_trend(channel, days=30):
     except Exception as e:
         return f"Query error: {e}"
 
+def tool_check_health():
+    """Run health check on all APIs and return current status."""
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from health_checker import test_practicum, test_free_trial, write_report
+        import os
+        practicum = test_practicum()
+        free_trial = test_free_trial()
+        report = write_report(practicum, free_trial)
+
+        # Summarize
+        lines = ["🩺 **Health check results:**", ""]
+        for label, result in [("Practicum", practicum), ("Free Trial", free_trial)]:
+            if result["status"] == "skipped":
+                lines.append(f"  ⚪ {label}: не настроен")
+                continue
+            failures = [r for r in result.get("results", []) if r["status"] == "fail"]
+            passes = [r for r in result.get("results", []) if r["status"] == "pass"]
+            if failures:
+                lines.append(f"  🔴 {label}: {len(failures)} failed")
+                for f in failures:
+                    lines.append(f"    - {f['test']}: {f['detail'][:100]}")
+            else:
+                lines.append(f"  🟢 {label}: {len(passes)}/{len(result['results'])} passed")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Health check error: {e}"
+
+
 def tool_query_subscriber_impact(channel, days=14):
     try:
         import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
@@ -910,6 +940,11 @@ TOOLS = [{"type": "function", "function": {
     }, "required": ["channel"]}
 }},
 {"type": "function", "function": {
+    "name": "check_health",
+    "description": "Run on-demand health check on Practicum + Free Trial APIs. Tests POST create user + GET verify.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
     "name": "query_subscriber_impact",
     "description": "Show daily subscriber deltas with posts — approximate per-post unsubscribe impact. Example: query_subscriber_impact @eddytester 14",
     "parameters": {"type": "object", "properties": {
@@ -945,6 +980,7 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "custom_metric_add": tool_custom_metric_add,
             "custom_metric_remove": tool_custom_metric_remove,
             "custom_metric_list": tool_custom_metric_list,
+            "check_health": tool_check_health,
             "query_subscriber_trend": tool_query_subscriber_trend,
             "query_subscriber_impact": tool_query_subscriber_impact}
 
@@ -963,6 +999,8 @@ def build_prompt():
         extra.append(f"\n\n## Твой контекст (ты можешь его обновлять write_file):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
     if STRAT_FILE.exists():
         extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува Эдди):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     files = list(OBSIDIAN_STRAT.glob("*.md")) if OBSIDIAN_STRAT.exists() else []
     if files: extra.append(f"\nStrategy files: {', '.join(f.name for f in files)}")
     return p + "\n".join(extra)
@@ -1018,6 +1056,8 @@ def trigger_mode():
         extra.append(f"\n\n## Твой контекст (обновляй его write_file когда узнаёшь новые факты):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
     if STRAT_FILE.exists():
         extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     strat_dir = OBSIDIAN_STRAT
     sfiles = list(strat_dir.glob("*.md")) if strat_dir.exists() else []
     if sfiles:
