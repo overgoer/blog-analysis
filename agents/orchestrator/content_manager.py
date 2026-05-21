@@ -551,8 +551,8 @@ def save_post_to_obsidian(topic, post_draft_old, post_draft_new, ga_review_resul
 def send_email(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed=None, new_commands=None, api_suggestions=None):
     """Send digest email via mailer with HTML formatting (old + new style)."""
     subject = f"Дайджест Оркестратора: {topic[:50]}"
-    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
-    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands)
+    html = format_email_html(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands, api_suggestions)
+    plain = format_email_plain(topic, ga_review_result, post_draft_old, post_draft_new, brief_path, wishlist_analyzed, new_commands, api_suggestions)
 
     try:
         import sys as _sys
