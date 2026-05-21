@@ -701,14 +701,30 @@ def save_review(review: dict) -> str:
     return str(fpath)
 
 
+def _md_to_html(text: str) -> str:
+    """Convert markdown **bold** and _italic_ to HTML tags."""
+    import re
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'_(.+?)_', r'<i>\1</i>', text)
+    return text
+
+
+def _n_plural(n, forms):
+    """Russian plural: forms = (один, два, пять)."""
+    n = int(n)
+    if n % 10 == 1 and n % 100 != 11:
+        return forms[0]
+    if 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+        return forms[1]
+    return forms[2]
+
+
 def get_longread_summary(review: dict) -> str:
     """TG-friendly summary with key findings — formatted for HTML parse_mode."""
     md = review["markdown"]
     lines = md.split("\n")
 
-    # ── Extract sections from markdown ──
     def section(name):
-        """Get compact content from a markdown section."""
         out = []
         capture = False
         for line in lines:
@@ -732,15 +748,18 @@ def get_longread_summary(review: dict) -> str:
             break
     parts.append("")
 
-    # 2. Our metrics — find @eddytester row
+    # 2. Our metrics — find @eddytester table row
     metrics = section("Метрики за неделю")
     our_row = next((l for l in metrics if "@eddytester" in l), None)
     if our_row and "|" in our_row:
         cols = [c.strip() for c in our_row.split("|")]
-        # cols: channel, posts, avg_views, avg_engage, notable
-        if len(cols) >= 5:
-            parts.append(f"<b>📈 @eddytester:</b> {cols[1]} постов, "
-                         f"средние просмотры {cols[2]}, вовлечение {cols[3]}")
+        # split yields ['', name, posts, avg_views, avg_engage, notable, '']
+        if len(cols) >= 6:
+            post_word = _n_plural(cols[2], ("пост", "поста", "постов"))
+            parts.append(
+                f"<b>📈 @eddytester:</b> {cols[2]} {post_word}, "
+                f"средние просмотры {cols[3]}, вовлечение {cols[4]}"
+            )
             parts.append("")
 
     # 3. Best format
@@ -748,16 +767,16 @@ def get_longread_summary(review: dict) -> str:
     best_fmt = next((l for l in fmt if l.startswith("**Лучший формат")), None)
     if best_fmt:
         clean = best_fmt.replace("**Лучший формат:**", "").strip()
-        parts.append(f"<b>🏆 Лучший формат:</b> {clean}")
+        parts.append(f"<b>🏆 Формат:</b> {clean}")
         follow = next((l for l in fmt if l.startswith("✅") or l.startswith("📊") or l.startswith("🔬")), None)
         if follow:
             parts.append(f"  {follow}")
         best_day = next((l for l in fmt if l.startswith("**Лучший день")), None)
         if best_day:
-            parts.append(f"  {best_day}")
+            parts.append(f"  {_md_to_html(best_day)}")
         best_time = next((l for l in fmt if l.startswith("**Лучшее время")), None)
         if best_time:
-            parts.append(f"  {best_time}")
+            parts.append(f"  {_md_to_html(best_time)}")
         parts.append("")
 
     # 4. Engagement quality — compact
@@ -766,11 +785,11 @@ def get_longread_summary(review: dict) -> str:
     eq_conclusion = [l for l in eq if l.startswith("**Тип") or l.startswith("→")]
     if eq_types:
         parts.append(f"<b>💬 Вовлечение:</b>")
-        parts.extend(eq_types[:2])
+        parts.append(f"  {eq_types[0]}")
+        if len(eq_types) > 1:
+            parts.append(f"  {eq_types[1]}")
         if eq_conclusion:
-            parts.append(eq_conclusion[0][:100])
-            if len(eq_conclusion) > 1:
-                parts.append(eq_conclusion[1][:100])
+            parts.append(f"  {_md_to_html(eq_conclusion[0])}")
         parts.append("")
 
     # 5. Notable posts — top 3
@@ -779,11 +798,10 @@ def get_longread_summary(review: dict) -> str:
     if notable_items:
         parts.append(f"<b>⭐ Notable:</b>")
         for ni in notable_items[:3]:
-            # Extract channel and reason
-            parts.append(f"  {ni.strip()[:120]}")
+            parts.append(f"  {_md_to_html(ni.strip())}")
         parts.append("")
 
-    # 6. Recommendations — top 3 lines
+    # 6. Recommendations — top recommendations
     recs = section("Рекомендации на неделю")
     rec_items = [l for l in recs if l.startswith("### ")]
     if rec_items:
@@ -794,7 +812,9 @@ def get_longread_summary(review: dict) -> str:
         parts.append("")
 
     # 7. Footer
-    parts.append(f"<i>📸 {len(review.get('charts', []))} графика — прикреплены выше</i>")
+    n = len(review.get("charts", []))
+    chart_word = _n_plural(n, ("график", "графика", "графиков"))
+    parts.append(f"<i>📸 {n} {chart_word} — прикреплены выше</i>")
 
     return "\n".join(parts)
 
@@ -831,7 +851,7 @@ def main():
             full_lines = review["markdown"].split("\n")
             if len(full_lines) > 80 and len(summary) < 1500:
                 extra = "\n".join(full_lines[-30:])  # recommendations + footer
-                send_message(f"📌 **Ключевые рекомендации:**\n\n{extra[:2000]}")
+                send_message(f"<b>📌 Ключевые рекомендации:</b>\n\n{extra[:2000]}", parse_mode="HTML")
 
             print(f"[send] Sent {len(review.get('charts', []))} charts + summary")
         except Exception as e:
