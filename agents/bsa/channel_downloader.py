@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Telegram Channel Downloader — скачивает посты из ЛЮБОГО Telegram канала.
+Telethon-версия (replaces tdl). Для tdl-версии см. channel_downloader_legacy.py.
 
 Возможности:
   - Любой канал (@username, ID)
-  - Пакетная загрузка с паузами (защита от бана)
-  - Нет жёсткого лимита на общее число постов
+  - Пакетная загрузка с паузами + offset_id пагинация
   - Поиск конкретного поста + комментарии
   - Экспорт в JSON и читаемый текст
 
@@ -17,140 +17,245 @@ Telegram Channel Downloader — скачивает посты из ЛЮБОГО 
   python3 channel_downloader.py --channel @channel --posts 50 --format text
 """
 
-import argparse, json, os, subprocess, sys, time
+import argparse, asyncio, json, os, sys, time
 from datetime import datetime
 
-TDL = "tdl"
-TDL_TIMEOUT = 120  # 2 min per batch
+API_ID = 5
+API_HASH = "1c5c96d5edd401b1ed40db3fb5633e2d"
+SESSION = "/root/.telethon_edtext"
 
 RAW_DIR = os.path.join(os.path.dirname(__file__), "..", "scout", "raw")
 
 
-def tdl_export(chat, limit, out_file, offset_id=None):
-    """Run tdl chat export, return parsed JSON or dict with 'error'."""
-    args = [TDL, "chat", "export", "-c", chat, "--type", "last", "-i", str(limit),
-            "-o", out_file, "--with-content", "--raw"]
-    try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=TDL_TIMEOUT)
-        if r.returncode != 0:
-            return {"error": r.stderr[-500:]}
-        if not os.path.exists(out_file) or os.path.getsize(out_file) < 10:
-            return {"error": "Empty output"}
-        with open(out_file) as f:
-            return json.load(f)
-    except subprocess.TimeoutExpired:
-        return {"error": f"tdl timeout after {TDL_TIMEOUT}s"}
-    except json.JSONDecodeError as e:
-        return {"error": f"JSON parse error: {e}"}
-    except Exception as e:
-        return {"error": str(e)}
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def find_post_by_id(chat, target_id, raw=True):
-    """Fetch last 200 posts, find specific post by ID."""
-    out = f"/tmp/tdl_find_{chat.strip('@')}_{target_id}.json"
-    data = tdl_export(chat, 200, out)
-    if isinstance(data, dict) and "error" in data:
-        return data
-    messages = data.get("messages", [])
-    for m in messages:
-        if m.get("id") == target_id:
-            return {"messages": [m]}
-    return {"error": f"Post #{target_id} not found in last {len(messages)} posts"}
-
-
-def export_replies(chat, post_id):
-    """Get comments for a channel post via the discussion group."""
-    out = f"/tmp/tdl_replies_{post_id}.json"
-    data = tdl_export(str(chat), 500, out)
-    if isinstance(data, dict) and "error" in data:
-        return data
-
-    messages = data.get("messages", [])
-    thread_msg_id = None
-    for m in messages:
-        fwd = m.get("raw", {}).get("FwdFrom", {})
-        if fwd and fwd.get("ChannelPost") == post_id:
-            thread_msg_id = m.get("id")
-            break
-
-    if not thread_msg_id:
-        return {"messages": [], "meta": {"error": f"No thread for post {post_id}"}}
-
-    comments = []
-    for m in messages:
-        reply_to = m.get("raw", {}).get("ReplyTo", {})
-        if reply_to and reply_to.get("ReplyToMsgID") == thread_msg_id:
-            comments.append(m)
-
-    return {"messages": comments}
-
-
-def format_post(msg):
-    """Format a single post for text display."""
-    raw = msg.get("raw", msg)
-    text = raw.get("Message") or raw.get("text", "")
-    text = text[:1000] if text else "(no text)"
-    post_id = msg.get("id", "?")
-    views = raw.get("Views", 0)
-    forwards = raw.get("Forwards", 0)
-    date_ts = raw.get("Date") or msg.get("date", 0)
-    date_str = datetime.fromtimestamp(date_ts).strftime("%d.%m %H:%M") if date_ts else "?"
-    has_media = bool(raw.get("Media"))
-    media_flag = " 📸" if has_media else ""
-
-    reactions = raw.get("Reactions", {})
+def _msg_to_dict(msg, chat=None):
+    """Convert a Telethon Message to a plain dict for JSON + formatting."""
+    text = (msg.text or "").strip()
     reacts = []
-    for r in reactions.get("Results", []):
-        emoji = r.get("Reaction", {}).get("Emoticon", "?")
-        count = r.get("Count", 0)
-        reacts.append(f"{emoji}{count}")
+    if msg.reactions and msg.reactions.results:
+        for r in msg.reactions.results:
+            emoji = getattr(r.reaction, "emoticon", "?") if r.reaction else "?"
+            reacts.append({"emoji": emoji, "count": r.count or 0})
+    has_media = bool(msg.photo or msg.video or msg.document)
+    media_type = None
+    if msg.photo:
+        media_type = "photo"
+    elif msg.video:
+        media_type = "video"
+    elif msg.document:
+        media_type = "document"
+
+    d = {
+        "id": msg.id,
+        "text": text,
+        "date": msg.date.timestamp() if msg.date else 0,
+        "date_iso": msg.date.isoformat() if msg.date else "",
+        "views": getattr(msg, "views", 0) or 0,
+        "forwards": getattr(msg, "forwards", 0) or 0,
+        "reactions": reacts,
+        "has_media": has_media,
+        "media_type": media_type,
+    }
+    if chat:
+        d["chat_id"] = chat
+    return d
+
+
+# ── single post ──────────────────────────────────────────────────────────────
+
+
+def find_post(chat, target_id):
+    """Find a specific post by ID via Telethon. Returns dict or {'error': ...}."""
+    async def _run():
+        from telethon import TelegramClient
+        client = TelegramClient(SESSION, API_ID, API_HASH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat)
+            msgs = await client.get_messages(entity, ids=target_id)
+            if not msgs or not msgs[0]:
+                return {"error": f"Post #{target_id} not found"}
+            d = _msg_to_dict(msgs[0], chat=chat)
+            if msgs[0].replies and msgs[0].replies.channel_id:
+                d["_replies_channel_id"] = msgs[0].replies.channel_id
+            return d
+        finally:
+            await client.disconnect()
+
+    return asyncio.run(_run())
+
+
+def fetch_comments(post_chat, post_id):
+    """Fetch comments for a channel post. Returns {'messages': [...]} or {'error': ...}."""
+    async def _run():
+        from telethon import TelegramClient
+        from telethon.tl.types import PeerChannel
+
+        client = TelegramClient(SESSION, API_ID, API_HASH)
+        await client.start()
+        try:
+            # Get the post to find discussion group
+            entity = await client.get_entity(post_chat)
+            post_msg = await client.get_messages(entity, ids=post_id)
+            msg = post_msg[0] if post_msg else None
+            if not msg:
+                return {"error": f"Post #{post_id} not found"}
+            if not msg.replies or not msg.replies.channel_id:
+                return {"error": "No discussion group"}
+
+            # Fetch discussion group messages
+            try:
+                discussion = await client.get_entity(PeerChannel(msg.replies.channel_id))
+                group_msgs = await client.get_messages(discussion, limit=500)
+            except Exception as e:
+                return {"error": f"Discussion group error: {e}"}
+
+            # Find forwarded post in group
+            thread_id = None
+            for gm in group_msgs:
+                if gm.fwd_from and gm.fwd_from.channel_post == post_id:
+                    thread_id = gm.id
+                    break
+
+            if not thread_id:
+                return {"messages": [], "meta": {"error": "No thread found"}}
+
+            # Collect replies to that thread
+            comments = []
+            for gm in group_msgs:
+                if gm.reply_to and gm.reply_to.reply_to_msg_id == thread_id:
+                    comments.append(_msg_to_dict(gm))
+
+            return {"messages": comments}
+        finally:
+            await client.disconnect()
+
+    return asyncio.run(_run())
+
+
+# ── batch download ──────────────────────────────────────────────────────────
+
+
+def download_channel(chat, total_needed, batch_size=200, delay=2):
+    """Download posts with batching and offset_id pagination via Telethon."""
+    async def _run():
+        from telethon import TelegramClient
+
+        client = TelegramClient(SESSION, API_ID, API_HASH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat)
+            all_msgs = []
+            last_id = None
+
+            print(f"📥 {chat}: {total_needed} постов, пакетами по {batch_size}, "
+                  f"пауза {delay}с", file=sys.stderr)
+
+            while len(all_msgs) < total_needed:
+                remaining = total_needed - len(all_msgs)
+                limit = min(batch_size, remaining)
+
+                kwargs = {"limit": limit}
+                if last_id:
+                    kwargs["offset_id"] = last_id
+
+                messages = await client.get_messages(entity, **kwargs)
+                if not messages:
+                    print(f"  ✅ Все посты скачаны (пакет пуст)", file=sys.stderr)
+                    break
+
+                # Deduplicate by ID
+                existing_ids = {m["id"] for m in all_msgs}
+                new_msgs = []
+                for msg in messages:
+                    if msg and msg.id not in existing_ids:
+                        new_msgs.append(_msg_to_dict(msg, chat=chat))
+                        existing_ids.add(msg.id)
+
+                if not new_msgs:
+                    print(f"  ✅ Начало канала (нет новых ID)", file=sys.stderr)
+                    break
+
+                batch_num = len(all_msgs) // batch_size + 1
+                all_msgs.extend(new_msgs)
+                oldest_id = min(m["id"] for m in new_msgs)
+
+                print(f"  ✅ Пакет #{batch_num}: +{len(new_msgs)} постов "
+                      f"(всего {len(all_msgs)}/{total_needed}, "
+                      f"старый ID: {oldest_id})", file=sys.stderr)
+
+                if len(new_msgs) < limit:
+                    print(f"  ✅ Начало канала достигнуто", file=sys.stderr)
+                    break
+
+                last_id = oldest_id
+
+                if len(all_msgs) < total_needed:
+                    time.sleep(delay)
+
+            return all_msgs
+        finally:
+            await client.disconnect()
+
+    return asyncio.run(_run())
+
+
+# ── formatting ──────────────────────────────────────────────────────────────
+
+
+def format_post(d):
+    """Format a post dict (from _msg_to_dict) for text display."""
+    post_id = d["id"]
+    text = d["text"][:1000] if d["text"] else "(no text)"
+    date_str = datetime.fromtimestamp(d["date"]).strftime("%d.%m %H:%M") if d.get("date") else "?"
+    media_flag = " 📸" if d.get("has_media") else ""
+
+    reacts = d.get("reactions", [])
+    react_str = " ".join(f"{r['emoji']}{r['count']}" for r in reacts) if reacts else ""
 
     lines = [
         f"📝 **Пост #{post_id}** ({date_str}){media_flag}",
-        f"👁 {views} просмотров · 🔁 {forwards} репостов",
+        f"👁 {d['views']} просмотров · 🔁 {d['forwards']} репостов",
     ]
-    if reacts:
-        lines.append(f"{' '.join(reacts)}")
+    if react_str:
+        lines.append(react_str)
     lines.append("")
     lines.append(text)
     return "\n".join(lines)
 
 
-def format_comment(msg):
-    """Format a single comment."""
-    raw = msg.get("raw", msg)
-    text = raw.get("Message") or raw.get("text", "")
+def format_comment(d):
+    """Format a comment dict for display."""
+    text = d.get("text", "")
     text = text[:500] if text else "(no text)"
-    if not text and raw.get("Media"):
+    if not d.get("text") and d.get("has_media"):
         text = "(media)"
-    msg_id = msg.get("id", "?")
-    date_ts = raw.get("Date") or msg.get("date", 0)
-    date_str = datetime.fromtimestamp(date_ts).strftime("%d.%m %H:%M") if date_ts else "?"
+    msg_id = d["id"]
+    date_str = datetime.fromtimestamp(d["date"]).strftime("%d.%m %H:%M") if d.get("date") else "?"
     return f"  💬 **#{msg_id}** ({date_str}): {text}"
+
+
+# ── high-level ──────────────────────────────────────────────────────────────
 
 
 def download_single_post(chat, post_id, with_comments=False):
     """Download a specific post by ID + optionally comments."""
-    data = find_post_by_id(chat, post_id)
+    data = find_post(chat, post_id)
     if isinstance(data, dict) and "error" in data:
         return f"❌ {data['error']}"
-    messages = data.get("messages", [])
-    if not messages:
+    if not data or "id" not in data:
         return "❌ Пост не найден"
 
-    result = [format_post(messages[0])]
+    result = [format_post(data)]
 
     if with_comments:
-        try:
-            # Try to find discussion group from the post
-            raw = messages[0].get("raw", {})
-            replies_info = raw.get("Replies", {})
-            discussion_id = replies_info.get("ChannelID") or replies_info.get("ChatID")
-
-            if discussion_id:
-                comments_data = export_replies(discussion_id, post_id)
-                if isinstance(comments_data, dict) and "error" not in comments_data:
+        discussion_id = data.get("_replies_channel_id")
+        if discussion_id:
+            try:
+                comments_data = fetch_comments(chat, post_id)
+                if "error" not in comments_data:
                     comments = comments_data.get("messages", [])
                     if comments:
                         parts = [f"\n💬 **Комментарии ({len(comments)}):**"]
@@ -160,71 +265,21 @@ def download_single_post(chat, post_id, with_comments=False):
                     else:
                         result.append("\n💬 Комментариев нет")
                 else:
-                    result.append(f"\n💬 Ошибка: {comments_data.get('error', 'неизвестна')}")
-            else:
-                result.append("\n💬 Комментарии недоступны (нет группы обсуждения)")
-        except Exception as e:
-            result.append(f"\n💬 Ошибка: {e}")
+                    result.append(f"\n💬 Ошибка: {comments_data['error']}")
+            except Exception as e:
+                result.append(f"\n💬 Ошибка чтения комментариев: {e}")
+        else:
+            result.append("\n💬 Комментарии недоступны (нет группы обсуждения)")
 
     return "\n\n".join(result)
 
 
-def download_batch(chat, posts_needed, batch_size=200, delay=2):
-    """Download posts with batching and delays."""
-    all_messages = []
-    oldest_id = None
-    batch_num = 0
-    batches_needed = (posts_needed + batch_size - 1) // batch_size
-
-    print(f"📥 {chat}: {posts_needed} постов, пакетами по {batch_size}, пауза {delay}с",
-          file=sys.stderr)
-
-    while len(all_messages) < posts_needed:
-        batch_num += 1
-        remaining = posts_needed - len(all_messages)
-        limit = min(batch_size, remaining)
-
-        out = f"/tmp/tdl_batch_{chat.strip('@')}_{batch_num}.json"
-        data = tdl_export(chat, limit, out)
-
-        if isinstance(data, dict) and "error" in data:
-            print(f"  ❌ Пакет #{batch_num}: {data['error']}", file=sys.stderr)
-            break
-
-        messages = data.get("messages", [])
-        if not messages:
-            print(f"  ✅ Все посты скачаны (пакет #{batch_num} пуст)", file=sys.stderr)
-            break
-
-        # Deduplicate by ID
-        existing_ids = {m.get("id") for m in all_messages}
-        new_messages = [m for m in messages if m.get("id") not in existing_ids]
-
-        if not new_messages:
-            print(f"  ✅ Достигли начала канала (нет новых ID)", file=sys.stderr)
-            break
-
-        all_messages.extend(new_messages)
-        ids = [m.get("id", 0) for m in new_messages]
-        oldest_id = min(ids)
-
-        print(f"  ✅ Пакет #{batch_num}: +{len(new_messages)} постов "
-              f"(всего {len(all_messages)}/{posts_needed}, "
-              f"старый ID: {oldest_id})", file=sys.stderr)
-
-        # If we got fewer than requested, we've hit the beginning
-        if len(new_messages) < limit:
-            print(f"  ✅ Начало канала достигнуто", file=sys.stderr)
-            break
-
-        if len(all_messages) < posts_needed:
-            time.sleep(delay)
-
-    return all_messages
+# ── CLI ─────────────────────────────────────────────────────────────────────
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Telegram Channel Downloader")
+    parser = argparse.ArgumentParser(
+        description="Telegram Channel Downloader (Telethon)")
     parser.add_argument("--channel", "-c", default="@eddytester",
                         help="Channel username (@name) or ID")
     parser.add_argument("--posts", "-p", type=int, default=0,
@@ -258,7 +313,7 @@ def main():
         parser.print_help()
         return
 
-    messages = download_batch(channel, args.posts, args.batch_size, args.delay)
+    messages = download_channel(channel, args.posts, args.batch_size, args.delay)
     if not messages:
         print("❌ Нет постов")
         return
@@ -268,33 +323,30 @@ def main():
     safe_name = channel.strip("@").replace(".", "_")
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     json_path = os.path.join(RAW_DIR, f"{safe_name}_{date_str}.json")
-    with open(json_path, "w") as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump({"channel": channel, "total": len(messages),
-                    "date": date_str, "messages": messages}, f,
-                  ensure_ascii=False, indent=2)
+                    "date": date_str, "messages": messages},
+                  f, ensure_ascii=False, indent=2)
 
     if args.format == "json":
         print(json.dumps({"channel": channel, "total": len(messages),
                           "file": json_path}, ensure_ascii=False))
 
     elif args.format == "summary":
-        # Brief summary
-        raw = messages[0].get("raw", messages[0])
-        newest_ts = raw.get("Date")
-        newest_date = datetime.fromtimestamp(newest_ts).strftime("%d.%m %H:%M") if newest_ts else "?"
-        oldest_raw = messages[-1].get("raw", messages[-1])
-        oldest_ts = oldest_raw.get("Date")
-        oldest_date = datetime.fromtimestamp(oldest_ts).strftime("%d.%m %H:%M") if oldest_ts else "?"
-        media_count = sum(1 for m in messages if m.get("raw", m).get("Media"))
-        total_views = sum(m.get("raw", m).get("Views", 0) for m in messages)
+        newest = messages[0]
+        newest_date = datetime.fromtimestamp(newest["date"]).strftime("%d.%m %H:%M") if newest.get("date") else "?"
+        oldest = messages[-1]
+        oldest_date = datetime.fromtimestamp(oldest["date"]).strftime("%d.%m %H:%M") if oldest.get("date") else "?"
+        media_count = sum(1 for m in messages if m.get("has_media"))
+        total_views = sum(m.get("views", 0) for m in messages)
 
         print(f"📊 **{channel}** — {len(messages)} постов")
         print(f"📅 {newest_date} → {oldest_date}")
         print(f"📸 {media_count} с медиа · 👁 {total_views} просмотров всего")
         print(f"💾 Сохранено: `{json_path}`")
 
-    else:  # text — show all posts formatted
-        formatted = [format_post(m) for m in messages[:50]]  # Show first 50 in text
+    else:  # text — show first 50 posts
+        formatted = [format_post(m) for m in messages[:50]]
         if len(messages) > 50:
             formatted.append(f"\n... и ещё {len(messages) - 50} постов")
             formatted.append(f"\n💾 Полный файл: `{json_path}`")
