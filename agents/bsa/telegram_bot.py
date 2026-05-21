@@ -75,24 +75,104 @@ def tg_api(method, data=None):
 TG_MAX = 4096
 
 
-def send_message(text, parse_mode="Markdown"):
+def _md_to_html(text: str) -> str:
+    """Convert common markdown to Telegram-safe HTML. Bulletproof."""
+    import re
+    # Code blocks first (protect their content)
+    text = re.sub(r'```(\w*)\n(.*?)```', r'<code>\2</code>', text, flags=re.DOTALL)
+    # Inline code
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+    # Bold **text** or __text__
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+    # Italic *text* or _text_ (but not inside words for _)
+    text = re.sub(r'(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)', r'<i>\1</i>', text)
+    text = re.sub(r'(?<!\w)\*(?!\*)(.+?)(?<!\*)\*(?!\w)', r'<i>\1</i>', text)
+    # Headers ### → bold
+    text = re.sub(r'^#{1,3}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    # Strikethrough ~~text~~
+    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
+    # No bullet markers → plain dash
+    text = re.sub(r'^(\s*)[•●▪]\s+', r'\1— ', text, flags=re.MULTILINE)
+    # Lines starting with number., make bold
+    text = re.sub(r'^(\d+)[.)]\s+(.+)$', r'<b>\1.</b> \2', text, flags=re.MULTILINE)
+    # Escape remaining HTML entities to prevent breakage
+    text = text.replace('&', '&amp;')
+    text = text.replace('<', '&lt;').replace('>', '&gt;')
+    # But restore our inserted tags
+    text = text.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
+    text = text.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
+    text = text.replace('&lt;code&gt;', '<code>').replace('&lt;/code&gt;', '</code>')
+    text = text.replace('&lt;s&gt;', '<s>').replace('&lt;/s&gt;', '</s>')
+    return text
+
+
+def send_message(text, parse_mode="HTML"):
     cid = load_chat_id()
     if not cid:
         log.warning("No chat ID configured")
         return False
 
-    # Split long messages
-    if len(text) > TG_MAX:
-        return _send_long(cid, text, parse_mode)
+    # Sanitize: convert any markdown to HTML
+    safe_text = _md_to_html(text)
 
-    payload = {"chat_id": int(cid), "text": text, "disable_notification": False}
+    # Split long messages
+    if len(safe_text) > TG_MAX:
+        return _send_long(cid, safe_text, parse_mode)
+
+    payload = {"chat_id": int(cid), "text": safe_text, "disable_notification": False}
     if parse_mode:
         payload["parse_mode"] = parse_mode
     r = tg_api("sendMessage", payload)
     if r and r.get("ok"):
         return True
-    log.warning("sendMessage failed for chat %s", cid)
-    return False
+    log.warning("sendMessage failed for chat %s, retrying as text", cid)
+    # Retry as plain text if HTML failed
+    payload.pop("parse_mode", None)
+    r = tg_api("sendMessage", payload)
+    return bool(r and r.get("ok"))
+
+
+def send_photo(caption, photo_path):
+    """Send a photo file with caption."""
+    import mimetypes
+    cid = load_chat_id()
+    if not cid:
+        log.warning("No chat ID configured")
+        return False
+    fpath = Path(photo_path)
+    if not fpath.exists():
+        log.warning("Photo not found: %s", photo_path)
+        return False
+
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    body = b""
+    body += f"--{boundary}\r\n".encode()
+    body += b'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+    body += f"{cid}\r\n".encode()
+    body += f"--{boundary}\r\n".encode()
+    body += f'Content-Disposition: form-data; name="photo"; filename="{fpath.name}"\r\n'.encode()
+    body += b"Content-Type: image/png\r\n\r\n"
+    body += fpath.read_bytes()
+    body += b"\r\n"
+    if caption:
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="caption"\r\n\r\n'
+        body += f"{caption[:200]}\r\n".encode()
+    body += f"--{boundary}--\r\n".encode()
+
+    token = load_token()
+    if not token:
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    req = Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        resp = urlopen(req, timeout=30)
+        r = json.loads(resp.read())
+        return r.get("ok", False)
+    except Exception as e:
+        log.warning("sendPhoto error: %s", e)
+        return False
 
 
 def _send_long(cid, text, parse_mode):
@@ -138,7 +218,7 @@ def process_outgoing():
             sent += 1
             continue
 
-        ok = send_message(text, parse_mode="Markdown") or send_message(text, parse_mode=None)
+        ok = send_message(text)
         if ok:
             log.info("Sent: %s", fpath.name)
             fpath.unlink()

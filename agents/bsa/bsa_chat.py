@@ -21,6 +21,9 @@ OBSIDIAN_STRAT = VAULT / "Стратегия"
 CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
+CONTEXT_FILE = OBSIDIAN_STRAT / "_КОНТЕКСТ.md"
+STRAT_FILE = OBSIDIAN_STRAT / "_СТРАТЕГИЯ.md"
+HEALTH_FILE = OBSIDIAN_STRAT / "_ХЕЛС_СТАТУС.md"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
 INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
 OUTBOX_FILE = Path("/root/obsidian-vault/outbox.md")
@@ -448,6 +451,242 @@ def tool_propose_bug(endpoint, description, repo="api-practicum"):
     fpath.write_text(json.dumps(proposal, ensure_ascii=False, indent=2))
     return "Proposal {}: {} - {}".format(proposal["id"], endpoint, description[:100])
 
+
+def tool_analyzer_add_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import add_channel
+        return add_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_remove_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import remove_channel
+        return remove_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_channel_stats(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_channel_stats
+        return get_channel_stats(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_notable(category=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_notable_summary
+        return get_notable_summary(category if category else None)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_search(query):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import search_posts
+        return search_posts(query)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_report():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_daily_report
+        return get_daily_report()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_list_channels():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import list_channels
+        return list_channels()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_strategy_review():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from strategy_review import build_review, save_review
+        review = build_review()
+        fpath = save_review(review)
+        chart_count = len(review["charts"])
+        return (f"✅ Стратегический обзор сгенерирован.\n"
+                f"Файл: {fpath}\n"
+                f"Графиков: {chart_count}")
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_query_channel_metrics(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_channel_metrics
+        return query_channel_metrics(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_top_posts(channel, limit=5, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_top_posts
+        return query_top_posts(channel, limit, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_category_performance(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_category_performance
+        return query_category_performance(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_competitor_comparison(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_competitor_comparison
+        return query_competitor_comparison(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_post_trend(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_post_trend
+        return query_post_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_content_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_content_profile
+        return query_content_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_goal_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_goal_profile
+        return query_goal_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_subscriber_trend(channel, days=30):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_trend
+        return query_subscriber_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_check_health():
+    """Run health check on all APIs and return current status."""
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from health_checker import test_practicum, test_free_trial, write_report
+        import os
+        practicum = test_practicum()
+        free_trial = test_free_trial()
+        report = write_report(practicum, free_trial)
+
+        # Summarize
+        lines = ["🩺 **Health check results:**", ""]
+        for label, result in [("Practicum", practicum), ("Free Trial", free_trial)]:
+            if result["status"] == "skipped":
+                lines.append(f"  ⚪ {label}: не настроен")
+                continue
+            failures = [r for r in result.get("results", []) if r["status"] == "fail"]
+            passes = [r for r in result.get("results", []) if r["status"] == "pass"]
+            if failures:
+                lines.append(f"  🔴 {label}: {len(failures)} failed")
+                for f in failures:
+                    lines.append(f"    - {f['test']}: {f['detail'][:100]}")
+            else:
+                lines.append(f"  🟢 {label}: {len(passes)}/{len(result['results'])} passed")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Health check error: {e}"
+
+
+def tool_query_subscriber_impact(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_impact
+        return query_subscriber_impact(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_category_add_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_keyword
+        return add_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_remove_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_keyword
+        return remove_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_list_overrides():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_overrides
+        return list_overrides()
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_suppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import suppress_keyword
+        return suppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_unsuppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import unsuppress_keyword
+        return unsuppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_add(name, formula, description=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_custom_metric
+        return add_custom_metric(name, formula, description)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_remove(name):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_custom_metric
+        return remove_custom_metric(name)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_list():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_custom_metrics
+        return list_custom_metrics()
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -525,14 +764,225 @@ TOOLS = [{"type": "function", "function": {
         "description": {"type": "string"},
         "repo": {"type": "string", "enum": ["api-practicum", "free-trial-api", "api-practicum-bot"]}
     }, "required": ["endpoint", "description"]}
-}}]
+}},
+{"type": "function", "function": {
+    "name": "analyzer_add_channel",
+    "description": "Add a Telegram channel to the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_remove_channel",
+    "description": "Remove a Telegram channel from the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_channel_stats",
+    "description": "Get analytics stats for a specific channel",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_notable",
+    "description": "Get top notable posts (optionally filter by category)",
+    "parameters": {"type": "object", "properties": {
+        "category": {"type": "string"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_search",
+    "description": "Search posts by text across all monitored channels",
+    "parameters": {"type": "object", "properties": {
+        "query": {"type": "string"}
+    }, "required": ["query"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_report",
+    "description": "Get daily content analysis report",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_list_channels",
+    "description": "List all channels in the monitoring pool",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_strategy_review",
+    "description": "Generate a weekly strategic review with charts — per-channel metrics, format analysis with confidence, competitor gaps, and recommendations",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_channel_metrics",
+    "description": "Get avg views/forwards/replies/engagement/notable for a channel over N days. Returns clean numbers. Example: query_channel_metrics @qachanell 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string", "description": "Channel @username"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_top_posts",
+    "description": "Get top posts by engagement for a channel. Returns post text, views, forwards, replies. Example: query_top_posts @eddytester 5 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "limit": {"type": "integer", "description": "Number of top posts (default 5)"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_category_performance",
+    "description": "Breakdown of posts by category for a channel — posts count, avg views, forwards, replies, notable per category. Example: query_category_performance @eddytester 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_competitor_comparison",
+    "description": "Compare ALL active channels side by side — posts, avg views, engagement, reach rate, notable count. No channel param needed. Example: query_competitor_comparison 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_post_trend",
+    "description": "Daily average views trend with ASCII bar chart for a channel. Example: query_post_trend @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_content_profile",
+    "description": "Compare topic categories across ALL channels — what % of posts falls into each topic (api/bugs, tools, career, etc.). Example: query_content_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_goal_profile",
+    "description": "Compare post INTENT (прогрев, экспертиза, продажа, hot_take, news, meta) across ALL channels. Shows which channels warm up, sell, or educate. Example: query_goal_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "category_add_keyword",
+    "description": "Add a keyword to a category. category_type: CATEGORY_KEYWORDS (topic) or GOAL_KEYWORDS (intent). Example: category_add_keyword CATEGORY_KEYWORDS api/bugs restassured",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_remove_keyword",
+    "description": "Remove a keyword override from a category.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_list_overrides",
+    "description": "Show all category keyword overrides.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "category_suppress_keyword",
+    "description": "Suppress a base keyword from matching. Fixes false positives. Example: category_suppress_keyword CATEGORY_KEYWORDS api/bugs ошибк",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_unsuppress_keyword",
+    "description": "Remove a keyword from the suppression list.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_add",
+    "description": "Add a custom metric. Formula can use: avg_views, avg_forwards, avg_replies, subscribers, posts, notable. Example: custom_metric_add engagement_rate 'avg_views / NULLIF(subscribers, 0)' 'Views per subscriber'",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"},
+        "formula": {"type": "string", "description": "Python expression using: avg_views, avg_forwards, avg_replies, subscribers, posts, notable"},
+        "description": {"type": "string"}
+    }, "required": ["name", "formula"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_remove",
+    "description": "Remove a custom metric by name.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"}
+    }, "required": ["name"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_list",
+    "description": "List all custom metrics.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_trend",
+    "description": "Get subscriber count trend for a channel over N days. Example: query_subscriber_trend @eddytester 30",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 30)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "check_health",
+    "description": "Run on-demand health check on Practicum + Free Trial APIs. Tests POST create user + GET verify.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_impact",
+    "description": "Show daily subscriber deltas with posts — approximate per-post unsubscribe impact. Example: query_subscriber_impact @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
+}}
+]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
             "list_dir": tool_list_dir, "glob_files": tool_glob_files, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
-            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug}
+            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug,
+            "analyzer_add_channel": tool_analyzer_add_channel, "analyzer_remove_channel": tool_analyzer_remove_channel,
+            "analyzer_channel_stats": tool_analyzer_channel_stats, "analyzer_notable": tool_analyzer_notable,
+            "analyzer_search": tool_analyzer_search, "analyzer_report": tool_analyzer_report,
+            "analyzer_list_channels": tool_analyzer_list_channels,
+            "analyzer_strategy_review": tool_analyzer_strategy_review,
+            "query_channel_metrics": tool_query_channel_metrics,
+            "query_top_posts": tool_query_top_posts,
+            "query_category_performance": tool_query_category_performance,
+            "query_competitor_comparison": tool_query_competitor_comparison,
+            "query_post_trend": tool_query_post_trend,
+            "query_content_profile": tool_query_content_profile,
+            "query_goal_profile": tool_query_goal_profile,
+            "category_add_keyword": tool_category_add_keyword,
+            "category_remove_keyword": tool_category_remove_keyword,
+            "category_list_overrides": tool_category_list_overrides,
+            "category_suppress_keyword": tool_category_suppress_keyword,
+            "category_unsuppress_keyword": tool_category_unsuppress_keyword,
+            "custom_metric_add": tool_custom_metric_add,
+            "custom_metric_remove": tool_custom_metric_remove,
+            "custom_metric_list": tool_custom_metric_list,
+            "check_health": tool_check_health,
+            "query_subscriber_trend": tool_query_subscriber_trend,
+            "query_subscriber_impact": tool_query_subscriber_impact}
 
 
 def build_prompt():
@@ -545,6 +995,12 @@ def build_prompt():
             extra.append("\n\nRecent posts:\n" + "\n".join(
                 f"- {p.get('title','?')} ({p.get('date','?')})" for p in recent))
         except: pass
+    if CONTEXT_FILE.exists():
+        extra.append(f"\n\n## Твой контекст (ты можешь его обновлять write_file):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува Эдди):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     files = list(OBSIDIAN_STRAT.glob("*.md")) if OBSIDIAN_STRAT.exists() else []
     if files: extra.append(f"\nStrategy files: {', '.join(f.name for f in files)}")
     return p + "\n".join(extra)
@@ -596,6 +1052,12 @@ def trigger_mode():
             extra.append("\nRecent posts:\n" + "\n".join(
                 f"- {p.get('title','?')} ({p.get('date','?')})" for p in recent))
         except: pass
+    if CONTEXT_FILE.exists():
+        extra.append(f"\n\n## Твой контекст (обновляй его write_file когда узнаёшь новые факты):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     strat_dir = OBSIDIAN_STRAT
     sfiles = list(strat_dir.glob("*.md")) if strat_dir.exists() else []
     if sfiles:
