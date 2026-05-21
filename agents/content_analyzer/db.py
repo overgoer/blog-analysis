@@ -224,7 +224,7 @@ category: {post['category']}
     return post
 
 
-def get_notable_posts(limit=20, category=None):
+def get_notable_posts(limit=20, category=None, days=None):
     conn = get_conn()
     try:
         q = """
@@ -235,6 +235,9 @@ def get_notable_posts(limit=20, category=None):
             WHERE p.notable = 1
         """
         params = []
+        if days:
+            q += " AND p.posted_at >= datetime('now', ?)"
+            params.append(f"-{days} days")
         if category:
             q += " AND p.category = ?"
             params.append(category)

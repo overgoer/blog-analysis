@@ -553,10 +553,10 @@ def _build_recommendations(gaps: list, fmt_perf: list, eq: dict, goals_review: l
                           for g in goals_review)
     if unsold_practicum:
         lines.append("### 1. Practicum — P0")
-        lines.append("Цель недели: продвинуться к продажам. Контент вокруг Practicum:")
+        lines.append("Цель недели: прогрев аудитории под запуск Practicum:")
         lines.append("- Кейс: как баг из Practicum помог на реальной работе")
         lines.append("- Разбор: что внутри API-симулятора (подогрев)")
-        lines.append("- CTA: ссылка на бот в каждом втором посте")
+        lines.append("- CTA добавить после запуска бота/сервиса")
         lines.append("")
 
     # Format recommendations
@@ -571,13 +571,9 @@ def _build_recommendations(gaps: list, fmt_perf: list, eq: dict, goals_review: l
     if gaps and gaps[0]["views_gap"] > 0.5:
         top_comp = gaps[0]["competitor"]
         g = gaps[0]
-        reach_note = ""
-        if g["comp_reach_pct"] and g["our_reach_pct"]:
-            reach_note = f" (их охват {g['comp_reach_pct']}%, наш {g['our_reach_pct']}%)"
+        comp_reach = f" (их охват {g['comp_reach_pct']}%, наш {g['our_reach_pct']}%)" if g["comp_reach_pct"] and g["our_reach_pct"] else ""
         lines.append(f"### 3. Смотреть на {top_comp}")
-        lines.append(f"Разрыв по просмотрам {round(g['views_gap']*100)}%{reach_note}. ")
-        lines.append(f"Проанализируй 5 их последних постов — что в заголовках, какой CTA?")
-        lines.append("")
+        lines.append(f"У {top_comp} выше вовлечение{comp_reach}. Попроси Bizzy проанализировать 5 их последних постов — формат, заголовки, CTA.")
 
     # Engagement quality
     if eq:
@@ -598,15 +594,19 @@ def _build_recommendations(gaps: list, fmt_perf: list, eq: dict, goals_review: l
 
 
 def _build_notable_summary() -> str:
-    """Brief notable post summary."""
-    notable_posts = db.get_notable_posts(limit=5)
+    """Brief notable post summary — only last 7 days."""
+    notable_posts = db.get_notable_posts(limit=5, days=7)
     if not notable_posts:
         return ""
 
     lines = ["## ⭐ Notable посты недели", ""]
     for n in notable_posts[:5]:
-        why = (n.get("why_works") or "")[:120]
-        lines.append(f"- **{n['channel_name']}** tg#{n['tg_post_id']}: {why}")
+        why = (n.get("why_works") or "")[:200]
+        views = n.get("views", 0) or 0
+        fwds = n.get("forwards", 0) or 0
+        media = n.get("media_type", "text")
+        media_tag = f" [{media}]" if media != "text" else ""
+        lines.append(f"- **{n['channel_name']}** tg#{n['tg_post_id']}{media_tag} 👁{_fmt_big(views)} 🔁{_fmt_big(fwds)}: {why}")
     lines.append("")
     return "\n".join(lines)
 
@@ -673,10 +673,10 @@ def build_review() -> dict:
         _build_engagement_quality_section(eq),
         "---",
         "",
-        _build_notable_summary(),
+        _build_recommendations(gaps, fmt_perf, eq, goals_review),
         "---",
         "",
-        _build_recommendations(gaps, fmt_perf, eq, goals_review),
+        _build_notable_summary(),
         "---",
         "",
         "## 📸 Графики",
@@ -847,11 +847,7 @@ def main():
                     caption = f"📈 График {i+1}/{len(review['charts'])}"
                     send_photo(caption, str(chart_path))
 
-            # If the full review is significantly longer, send last chunk
-            full_lines = review["markdown"].split("\n")
-            if len(full_lines) > 80 and len(summary) < 1500:
-                extra = "\n".join(full_lines[-30:])  # recommendations + footer
-                send_message(f"<b>📌 Ключевые рекомендации:</b>\n\n{extra[:2000]}", parse_mode="HTML")
+            # Charts already sent as separate photo messages above — no extra text needed
 
             print(f"[send] Sent {len(review.get('charts', []))} charts + summary")
         except Exception as e:

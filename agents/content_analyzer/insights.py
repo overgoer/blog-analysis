@@ -11,12 +11,22 @@ def _compute_engagement(post: dict) -> float:
          + post.get("forwards", 0) * w["forwards"]
 
 
-def _call_deepseek(text: str, context: str = "") -> dict:
+def _call_deepseek(text: str, context: str = "", media_type: str = "text") -> dict:
     """Analyze a post via DeepSeek. Returns {analysis, why_works}."""
+    media_note = ""
+    if media_type != "text":
+        media_note = f"\n⚠️ ВАЖНО: Этот пост содержит {media_type}. Ты видишь только подпись, а не сам {media_type}. Не придумывай анализ того, чего не видел."
     prompt = f"""Ты — аналитик Telegram-каналов в нише QA / API-тестирования.
 
 Проанализируй этот пост и ответь строго в JSON:
 {{"analysis": "краткий анализ (2-3 предложения на русском)", "why_works": "почему пост залетел/не залетел (1-2 предложения)"}}
+
+ПРАВИЛА:
+1. Если в посте есть медиа (видео/фото), а ты видишь только текст — скажи честно: "пост содержит [media], текст не позволяет оценить"
+2. Не пиши "пост залетает из-за юмора/релевантности", если это пустая общая фраза
+3. Если пост не набрал реакций — скажи "пост не залетел"
+4. Отвечай только на русском
+5. Говори коротко и по делу, без воды{media_note}
 
 Контекст канала: {context}
 
@@ -91,12 +101,14 @@ def analyze_channel(channel_id: int, channel_name: str, posts: list, category_ma
     notable_results = []
     for p in ranked[:top_n]:
         engagement = _compute_engagement(p)
-        # Skip if engagement is zero
-        if engagement == 0:
+        views = p.get("views", 0) or 0
+        # Skip posts with very low true engagement — views alone don't count
+        if engagement < 100 and views < 500:
             continue
 
         context = f"Канал: {channel_name}"
-        analysis = _call_deepseek(p.get("text", ""), context)
+        media_type = p.get("media_type", "text")
+        analysis = _call_deepseek(p.get("text", ""), context, media_type)
 
         marked = mark_notable(
             post_id=p["id"],
