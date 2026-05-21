@@ -95,6 +95,48 @@ def send_message(text, parse_mode="Markdown"):
     return False
 
 
+def send_photo(caption, photo_path):
+    """Send a photo file with caption."""
+    import mimetypes
+    cid = load_chat_id()
+    if not cid:
+        log.warning("No chat ID configured")
+        return False
+    fpath = Path(photo_path)
+    if not fpath.exists():
+        log.warning("Photo not found: %s", photo_path)
+        return False
+
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    body = b""
+    body += f"--{boundary}\r\n".encode()
+    body += b'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+    body += f"{cid}\r\n".encode()
+    body += f"--{boundary}\r\n".encode()
+    body += f'Content-Disposition: form-data; name="photo"; filename="{fpath.name}"\r\n'.encode()
+    body += b"Content-Type: image/png\r\n\r\n"
+    body += fpath.read_bytes()
+    body += b"\r\n"
+    if caption:
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="caption"\r\n\r\n'
+        body += f"{caption[:200]}\r\n".encode()
+    body += f"--{boundary}--\r\n".encode()
+
+    token = load_token()
+    if not token:
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    req = Request(url, data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        resp = urlopen(req, timeout=30)
+        r = json.loads(resp.read())
+        return r.get("ok", False)
+    except Exception as e:
+        log.warning("sendPhoto error: %s", e)
+        return False
+
+
 def _send_long(cid, text, parse_mode):
     """Split long text into chunks and send sequentially."""
     chunks = []

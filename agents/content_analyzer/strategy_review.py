@@ -681,28 +681,86 @@ def save_review(review: dict) -> str:
 
 
 def get_longread_summary(review: dict) -> str:
-    """Extract a TG-friendly summary (highlights)."""
+    """TG-friendly summary with key findings (~3500 chars)."""
     md = review["markdown"]
     lines = md.split("\n")
-    summary = [
-        f"📊 *Стратегический обзор — {_week_number()}*",
-        f"_{_week_range()}_",
-        "",
-    ]
+    summary = []
+    total = len(lines)
 
-    # Extract goals section
-    in_goals = False
-    for line in lines:
-        if "Цели канала" in line:
-            in_goals = True
-            continue
-        if in_goals:
-            if line.startswith("---") or line.startswith("## 📊"):
-                break
-            summary.append(line)
-
+    # 1. Header
+    for i, line in enumerate(lines):
+        if line.startswith("# Стратеги"):
+            summary.append(line.replace("# ", "📊 *", 1) + "*")
+            if i + 1 < total and lines[i+1].startswith("_"):
+                summary.append(lines[i+1])
+            break
     summary.append("")
-    summary.append("_Полный обзор в Стратегия/Анализ/Weekly/_")
+
+    # 2. Our metrics (first row of metrics table)
+    in_metrics = False
+    for line in lines:
+        if "Метрики за неделю" in line:
+            in_metrics = True
+            continue
+        if in_metrics and line.startswith("| @"):
+            summary.append(f"📈 *Канал:* {line}")
+            break
+    summary.append("")
+
+    # 3. Best format
+    in_formats = False
+    for line in lines:
+        if "Анализ форматов" in line:
+            in_formats = True
+            continue
+        if in_formats and line.startswith("**Лучший"):
+            summary.append(f"🏆 {line.strip('*')}")
+            # Next non-empty line is confidence follow-up
+            continue
+        if in_formats and line.startswith("✅") or line.startswith("📊") or line.startswith("🔬"):
+            summary.append(f"  {line}")
+            summary.append("")
+            break
+
+    # 4. Engagement quality (compact)
+    in_eq = False
+    eq_lines = []
+    for line in lines:
+        if "Качество вовлечения" in line:
+            in_eq = True
+            continue
+        if in_eq:
+            if line.startswith("---") or line.startswith("## 🔍"):
+                break
+            if line.startswith("- ") or line.startswith("**Тип") or line.startswith("→"):
+                eq_lines.append(line)
+    if eq_lines:
+        summary.append("💬 *Вовлечение:*")
+        summary.extend(eq_lines[:4])
+        summary.append("")
+
+    # 5. Top recommendation
+    in_recs = False
+    rec_lines = []
+    for line in lines:
+        if "Рекомендации на неделю" in line:
+            in_recs = True
+            continue
+        if in_recs:
+            if line.startswith("---") or line.startswith("## 📸"):
+                break
+            if line and not line.startswith("_"):
+                rec_lines.append(line)
+    if rec_lines:
+        summary.append("🎯 *Рекомендации:*")
+        for rl in rec_lines[:8]:
+            summary.append(rl)
+        summary.append("")
+
+    # 6. Footer with charts note + link
+    summary.append(f"_Всего {len(review.get('charts', []))} графиков — прикреплены выше_")
+    summary.append(f"_Полный обзор: Стратегия/Анализ/Weekly/{_week_number()}.md_")
+
     return "\n".join(summary)
 
 
@@ -721,10 +779,26 @@ def main():
     if do_send:
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bsa"))
-            from telegram_bot import push_message
+            from telegram_bot import send_message, send_photo
+
+            # Send concise review (fits in TG, ~4K chars)
             summary = get_longread_summary(review)
-            push_message(summary)
-            print("[send] TG summary sent")
+            send_message(summary)
+
+            # Send charts as photos with captions
+            for i, cp in enumerate(review.get("charts", [])):
+                chart_path = Path(cp)
+                if chart_path.exists():
+                    caption = f"📈 График {i+1}/{len(review['charts'])}"
+                    send_photo(caption, str(chart_path))
+
+            # If the full review is significantly longer, send last chunk
+            full_lines = review["markdown"].split("\n")
+            if len(full_lines) > 80 and len(summary) < 1500:
+                extra = "\n".join(full_lines[-30:])  # recommendations + footer
+                send_message(f"📌 **Ключевые рекомендации:**\n\n{extra[:2000]}")
+
+            print(f"[send] Sent {len(review.get('charts', []))} charts + summary")
         except Exception as e:
             print(f"[send] Failed: {e}")
 
