@@ -158,7 +158,9 @@ def test_free_trial():
     elif status >= 400:
         results.append({"test": "POST create user", "status": "fail", "detail": f"HTTP {status}: {body}"})
     else:
-        created_id = body.get("id") if isinstance(body, dict) else None
+        # Free Trial POST wraps user in {"user": {id, name, ...}, "_upsell": "..."}
+        if isinstance(body, dict):
+            created_id = body.get("id") or body.get("user", {}).get("id")
         results.append({
             "test": "POST create user",
             "status": "pass",
@@ -178,10 +180,15 @@ def test_free_trial():
         results.append({"test": "GET verify user", "status": "fail", "detail": f"HTTP {status2}: {body2}"})
     else:
         found = False
-        if isinstance(body2, dict):
-            found = body2.get("name") == test_user["name"]
-        elif isinstance(body2, list):
+        if isinstance(body2, list):
             found = any(u.get("name") == test_user["name"] for u in body2)
+        elif isinstance(body2, dict):
+            # Free Trial GET returns {"users": [...], "_upsell": "..."}
+            users_list = body2.get("users", body2.get("data", []))
+            if isinstance(users_list, list) and users_list:
+                found = any(u.get("name") == test_user["name"] for u in users_list)
+            else:
+                found = body2.get("name") == test_user["name"]
         results.append({
             "test": "GET verify user",
             "status": "pass" if found else "warn",
