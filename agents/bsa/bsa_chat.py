@@ -575,6 +575,22 @@ def tool_query_goal_profile(days=7):
     except Exception as e:
         return f"Query error: {e}"
 
+def tool_query_subscriber_trend(channel, days=30):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_trend
+        return query_subscriber_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_subscriber_impact(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_impact
+        return query_subscriber_impact(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
 def tool_category_add_keyword(category_type, category, keyword):
     try:
         import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
@@ -883,6 +899,22 @@ TOOLS = [{"type": "function", "function": {
     "name": "custom_metric_list",
     "description": "List all custom metrics.",
     "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_trend",
+    "description": "Get subscriber count trend for a channel over N days. Example: query_subscriber_trend @eddytester 30",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 30)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_impact",
+    "description": "Show daily subscriber deltas with posts — approximate per-post unsubscribe impact. Example: query_subscriber_impact @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
 }}
 ]
 
@@ -911,7 +943,9 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "category_unsuppress_keyword": tool_category_unsuppress_keyword,
             "custom_metric_add": tool_custom_metric_add,
             "custom_metric_remove": tool_custom_metric_remove,
-            "custom_metric_list": tool_custom_metric_list}
+            "custom_metric_list": tool_custom_metric_list,
+            "query_subscriber_trend": tool_query_subscriber_trend,
+            "query_subscriber_impact": tool_query_subscriber_impact}
 
 
 def build_prompt():

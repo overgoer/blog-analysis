@@ -18,11 +18,23 @@ def migrate_db():
     """Add new columns that may not exist in older DBs."""
     conn = get_conn()
     try:
-        # Add goal column if not exists
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(posts)").fetchall()]
         if "goal" not in cols:
             conn.execute("ALTER TABLE posts ADD COLUMN goal TEXT DEFAULT 'other'")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_goal ON posts(goal)")
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS subscriber_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                subscribers INTEGER NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(channel_id, date),
+                FOREIGN KEY(channel_id) REFERENCES channels(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sub_log_channel ON subscriber_log(channel_id);
+            CREATE INDEX IF NOT EXISTS idx_sub_log_date ON subscriber_log(date);
+        """)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -354,6 +366,60 @@ def get_goal_distribution(days=7, channel_id=None):
             params.append(channel_id)
         q += " GROUP BY p.goal ORDER BY COUNT(*) DESC"
         return [dict(r) for r in conn.execute(q, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def log_subscriber_count(channel_id, subscribers):
+    """Log today's subscriber count for a channel (upsert)."""
+    conn = get_conn()
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        conn.execute("""
+            INSERT INTO subscriber_log (channel_id, date, subscribers)
+            VALUES (?, ?, ?)
+            ON CONFLICT(channel_id, date) DO UPDATE SET subscribers = excluded.subscribers
+        """, (channel_id, subscribers, today))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_subscriber_trend(channel_id, days=30):
+    """Get subscriber counts per day for a channel."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT date, subscribers
+            FROM subscriber_log
+            WHERE channel_id = ? AND date >= datetime('now', ?)
+            ORDER BY date
+        """, (channel_id, f"-{days} days")).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_subscriber_impact(channel_id, days=14):
+    """Daily subscriber deltas with posts published that day — approximate per-post unsubscribe analysis."""
+    conn = get_conn()
+    try:
+        rows = conn.execute("""
+            WITH daily_subs AS (
+                SELECT date, subscribers,
+                       LAG(subscribers) OVER (ORDER BY date) AS prev_subs,
+                       (subscribers - LAG(subscribers) OVER (ORDER BY date)) AS delta
+                FROM subscriber_log
+                WHERE channel_id = ? AND date >= datetime('now', ?)
+            )
+            SELECT ds.date, ds.subscribers, ds.delta,
+                   GROUP_CONCAT(p.tg_post_id || ':' || COALESCE(p.views, 0) || 'v' || COALESCE(p.forwards, 0) || 'f', ', ') AS posts_today
+            FROM daily_subs ds
+            LEFT JOIN posts p ON p.channel_id = ? AND date(p.posted_at) = ds.date
+            GROUP BY ds.date
+            ORDER BY ds.date
+        """, (channel_id, f"-{days} days", channel_id)).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 

@@ -15,7 +15,7 @@
 | 2 | **Bizzy → прямые SQL-инструменты** | ✅ | 5 инструментов: channel_metrics, top_posts, category_perf, competitor_comparison, post_trend + category/goal profile |
 | 2b | **Кастомные метрики** | ✅ | Bizzy tools: custom_metric_add/remove/list, подтягиваются в query_channel_metrics |
 | 2c | **Форматирование Telegram** | ✅ | _md_to_html() — железобетонный конвертер markdown→HTML для всех сообщений |
-| 3 | **Трекер подписчиков** | ⏳ Следующий | — |
+| 3 | **Трекер подписчиков** | ✅ | subscriber_tracker.py, db.log_subscriber_count, Bizzy tools: query_subscriber_trend + query_subscriber_impact |
 | 4 | **Убрать выводы из strategy_review** | ❌ Отложено | SQL-инструменты уже дают Bizzy прямой доступ к данным |
 | 5 | **Цикл обратной связи** | ❌ Отложено | Ждёт #3 (трекер) и #6 (продукт) |
 | 6 | **База знаний продуктов** | ✅ | _ПРОДУКТ.md + _КОНТЕКСТ.md обновлены: вся воронка, ЦА, боли |

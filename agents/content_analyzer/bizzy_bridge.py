@@ -457,6 +457,57 @@ def query_goal_profile(days: int = 7) -> str:
         conn.close()
 
 
+def query_subscriber_trend(channel_name: str, days: int = 30) -> str:
+    """Bizzy tool: get subscriber count trend for a channel."""
+    import db
+    ch = db.get_channel_by_name(channel_name)
+    if not ch:
+        return f"Канал {channel_name} не найден."
+    data = db.get_subscriber_trend(ch["id"], days=days)
+    if not data:
+        return f"Нет данных подписчиков для {channel_name}. Трекер ещё не запущен."
+
+    lines = [f"📈 Динамика подписчиков {channel_name} за {days} дн:", ""]
+    prev = None
+    for d in data:
+        delta = ""
+        if prev is not None:
+            diff = d["subscribers"] - prev
+            sign = "+" if diff > 0 else ""
+            delta = f" ({sign}{diff})"
+        lines.append(f"  {d['date']}: {_fmt(d['subscribers'])}{delta}")
+        prev = d["subscribers"]
+    if len(data) >= 2:
+        total_change = data[-1]["subscribers"] - data[0]["subscribers"]
+        sign = "+" if total_change > 0 else ""
+        lines.append("")
+        lines.append(f"Итого за период: {sign}{_fmt(total_change)} подписчиков")
+    return "\n".join(lines)
+
+
+def query_subscriber_impact(channel_name: str, days: int = 14) -> str:
+    """Bizzy tool: daily subscriber deltas with posts — approximate unsubscribe impact."""
+    import db
+    ch = db.get_channel_by_name(channel_name)
+    if not ch:
+        return f"Канал {channel_name} не найден."
+    data = db.get_subscriber_impact(ch["id"], days=days)
+    if not data:
+        return f"Нет данных для {channel_name}. Трекер ещё не запущен."
+
+    lines = [f"🔍 Влияние постов на подписчиков {channel_name} за {days} дн:", ""]
+    for d in data:
+        delta = d["delta"]
+        if delta is None:
+            continue
+        sign = "+" if delta > 0 else ""
+        emoji = "🟢" if delta >= 0 else "🔴"
+        posts = d.get("posts_today", "") or "нет постов"
+        lines.append(f"  {emoji} {d['date']}: {sign}{delta} (всего: {_fmt(d['subscribers'])})")
+        lines.append(f"     Посты: {posts[:150]}")
+    return "\n".join(lines)
+
+
 def query_post_trend(channel_name: str, days: int = 14) -> str:
     """Bizzy tool: daily average views trend."""
     import db
