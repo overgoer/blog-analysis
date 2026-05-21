@@ -505,6 +505,19 @@ def tool_analyzer_list_channels():
     except Exception as e:
         return f"Analyzer error: {e}"
 
+def tool_analyzer_strategy_review():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from strategy_review import build_review, save_review
+        review = build_review()
+        fpath = save_review(review)
+        chart_count = len(review["charts"])
+        return (f"✅ Стратегический обзор сгенерирован.\n"
+                f"Файл: {fpath}\n"
+                f"Графиков: {chart_count}")
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
 
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
@@ -628,6 +641,11 @@ TOOLS = [{"type": "function", "function": {
     "name": "analyzer_list_channels",
     "description": "List all channels in the monitoring pool",
     "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_strategy_review",
+    "description": "Generate a weekly strategic review with charts — per-channel metrics, format analysis with confidence, competitor gaps, and recommendations",
+    "parameters": {"type": "object", "properties": {}}
 }}
 ]
 
@@ -640,7 +658,8 @@ TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_
             "analyzer_add_channel": tool_analyzer_add_channel, "analyzer_remove_channel": tool_analyzer_remove_channel,
             "analyzer_channel_stats": tool_analyzer_channel_stats, "analyzer_notable": tool_analyzer_notable,
             "analyzer_search": tool_analyzer_search, "analyzer_report": tool_analyzer_report,
-            "analyzer_list_channels": tool_analyzer_list_channels}
+            "analyzer_list_channels": tool_analyzer_list_channels,
+            "analyzer_strategy_review": tool_analyzer_strategy_review}
 
 
 def build_prompt():

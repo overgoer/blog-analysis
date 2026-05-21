@@ -398,6 +398,20 @@ def build_pulse():
         lines.append(f"  {scout}")
         lines.append("")
 
+    # 6b. Monday: strategy review notification
+    if weekday == 0:  # Monday
+        weekly_dir = Path("/root/obsidian-vault/eddytester/Стратегия/Анализ/Weekly")
+        charts_dir = weekly_dir / "charts"
+        weekly_files = sorted(weekly_dir.glob("*.md")) if weekly_dir.exists() else []
+        if weekly_files:
+            latest = weekly_files[-1]
+            chart_files = list(charts_dir.glob("*.png")) if charts_dir.exists() else []
+            lines.append(f"📊 *СТРАТЕГИЧЕСКИЙ ОБЗОР НЕДЕЛИ:*")
+            lines.append(f"  Доступен: {latest.name}")
+            lines.append(f"  Графики: {len(chart_files)} шт")
+            lines.append(f"  Напиши «обзор» чтобы Bizzy сгенерировал свежий")
+            lines.append("")
+
     # 7. Action point
     lines.append(f"⚡ *ДЕЙСТВИЕ НА СЕГОДНЯ:*")
     # Check if any pending posts need writing
