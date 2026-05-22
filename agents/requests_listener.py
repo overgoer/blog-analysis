@@ -65,7 +65,7 @@ def git_pull():
     except Exception:
         pass
     r = subprocess.run(
-        ['git', '-C', str(VAULT_DIR), 'pull', '--rebase'],
+        ['git', '-C', str(VAULT_DIR), 'pull', '--ff-only'],
         capture_output=True, text=True, timeout=30,
     )
     if r.returncode != 0:
