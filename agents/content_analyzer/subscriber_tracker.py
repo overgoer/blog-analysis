@@ -28,6 +28,16 @@ TOKEN_FILE = BASE.parent / "bsa" / ".tg_token"
 
 CHANNELS_TO_TRACK = [
     "@eddytester",
+    "@qachanell",
+    "@qabigtech",
+    "@rvtsakunov",
+    "@rvtsakunov_manual",
+    "@burning_tester",
+    "@protestinginfo",
+    "@qa_chillout",
+    "@testerlib",
+    "@serious_tester",
+    "@qa_and_it",
 ]
 
 

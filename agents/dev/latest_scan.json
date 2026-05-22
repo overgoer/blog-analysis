@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-07T21:44:22.093969",
+  "timestamp": "2026-05-22T09:30:01.278599",
   "candidates_api": {
     "file": "server.js",
     "lines": 143,
@@ -10,7 +10,7 @@
   },
   "free_trial_api": {
     "file": "server.js",
-    "lines": 112
+    "lines": 130
   },
   "practicum_bot": {
     "file": "main.py",

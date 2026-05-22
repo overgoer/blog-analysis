@@ -400,6 +400,19 @@ def get_subscriber_trend(channel_id, days=30):
         conn.close()
 
 
+def get_latest_subscriber_count(channel_id):
+    """Get the latest subscriber count for a channel from the log."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT subscribers FROM subscriber_log WHERE channel_id = ? ORDER BY date DESC LIMIT 1",
+            (channel_id,)
+        ).fetchone()
+        return row["subscribers"] if row else None
+    finally:
+        conn.close()
+
+
 def get_subscriber_impact(channel_id, days=14):
     """Daily subscriber deltas with posts published that day — approximate per-post unsubscribe analysis."""
     conn = get_conn()

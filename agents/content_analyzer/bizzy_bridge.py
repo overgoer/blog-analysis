@@ -216,10 +216,14 @@ def query_channel_metrics(channel_name: str, days: int = 7) -> str:
         from channel_goals import SUBSCRIBERS
         engage = d["avg_v"] + d["avg_r"] * 3 + d["avg_f"] * 5
 
+        subs = db.get_latest_subscriber_count(ch["id"])
+        if not subs:
+            subs = SUBSCRIBERS.get(channel_name, 0)
+
         from runtime_config import get_custom_metrics
         custom = _custom_metrics_block({
             "avg_views": d["avg_v"], "avg_forwards": d["avg_f"], "avg_replies": d["avg_r"],
-            "posts": d["posts"], "subscribers": SUBSCRIBERS.get(channel_name, 0),
+            "posts": d["posts"], "subscribers": subs,
             "notable": d["notable"],
         })
         result = (
@@ -324,7 +328,7 @@ def query_competitor_comparison(days: int = 7) -> str:
     conn = db.get_conn()
     try:
         rows = conn.execute("""
-            SELECT c.name as channel,
+            SELECT c.id as cid, c.name as channel,
                    COUNT(p.id) as posts,
                    COALESCE(AVG(p.views), 0) as avg_v,
                    COALESCE(AVG(p.forwards), 0) as avg_f,
@@ -344,7 +348,9 @@ def query_competitor_comparison(days: int = 7) -> str:
         lines.append(f"  {'─'*20} {'─'*6} {'─'*8} {'─'*8} {'─'*8} {'─'*7}")
         for r in rows:
             engage = r["avg_v"] + r["avg_r"] * 3 + r["avg_f"] * 5
-            subs = SUBSCRIBERS.get(r["channel"], 0)
+            subs = db.get_latest_subscriber_count(r["cid"])
+            if not subs:
+                subs = SUBSCRIBERS.get(r["channel"], 0)
             reach = f"{round(r['avg_v'] / subs * 100, 1)}%" if subs else "—"
             marker = " ⬅️" if r["channel"] == "@eddytester" else ""
             lines.append(

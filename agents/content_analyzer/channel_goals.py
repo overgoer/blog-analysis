@@ -68,12 +68,17 @@ PRIMARY_COMPETITORS = ["@qachanell", "@qabigtech", "@protestinginfo", "@rvtsakun
 # Used to compute reach rate (% of subscribers who viewed).
 # Обновляй по мере уточнения данных.
 SUBSCRIBERS = {
-    "@eddytester": 1500,
-    "@qachanell": 5000,      # оценка
-    "@qabigtech": 3000,      # оценка
-    "@burning_tester": 3000, # оценка
-    "@protestinginfo": 5000, # оценка
-    "@serious_tester": 5000, # оценка
+    "@eddytester": 1550,     # Telegram Bot API 2026-05-22
+    "@qachanell": 29894,     # Telegram Bot API 2026-05-22
+    "@qabigtech": 5568,      # Telegram Bot API 2026-05-22
+    "@rvtsakunov": 3460,     # Telegram Bot API 2026-05-22
+    "@rvtsakunov_manual": 2849, # Telegram Bot API 2026-05-22
+    "@burning_tester": 5767, # Telegram Bot API 2026-05-22
+    "@protestinginfo": 14712, # Telegram Bot API 2026-05-22
+    "@qa_chillout": 10854,   # Telegram Bot API 2026-05-22
+    "@testerlib": 9110,      # Telegram Bot API 2026-05-22
+    "@serious_tester": 30747, # Telegram Bot API 2026-05-22
+    "@qa_and_it": 3132,      # Telegram Bot API 2026-05-22
 }
 
 # ── Analysis thresholds ─────────────────────────────────────────────────

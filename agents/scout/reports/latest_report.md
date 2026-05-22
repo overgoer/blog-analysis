@@ -1,11 +1,11 @@
-# SCOUT Report | 2026-05-21
+# SCOUT Report | 2026-05-22
 
 ## Competitor Activity Overview
 
 | Channel | Posts | Top Categories |
 |---------|-------|-----------------|
 | qabigtech | 15 | AI/LLM, engagement, API |
-| qachanell | 15 | API, guide, education |
+| qachanell | 15 | API, guide, engagement |
 | burning_tester | 15 | career, API, bugs |
 | rvtsakunov | 15 | engagement, career, education |
 | rvtsakunov_manual | 15 | career, API, other |
@@ -33,14 +33,14 @@ Total posts: 15 | Images: 86.7%
 | bugs | 1 | 6.7% |
 
 ### qachanell
-Total posts: 15 | Images: 53.3%
+Total posts: 15 | Images: 46.7%
 
 | Category | Count | % |
 |----------|-------|---|
-| API | 7 | 53.8% |
+| API | 6 | 46.2% |
 | guide | 3 | 23.1% |
+| engagement | 2 | 15.4% |
 | education | 2 | 15.4% |
-| engagement | 1 | 7.7% |
 
 ### burning_tester
 Total posts: 15 | Images: 93.3%
@@ -94,22 +94,22 @@ Total posts: 15 | Images: 100.0%
 | AI/LLM | 1 | 6.7% |
 
 ### testerlib
-Total posts: 15 | Images: 66.7%
+Total posts: 15 | Images: 60.0%
 
 | Category | Count | % |
 |----------|-------|---|
-| API | 4 | 50.0% |
-| engagement | 2 | 25.0% |
-| AI/LLM | 1 | 12.5% |
-| career | 1 | 12.5% |
+| API | 5 | 55.6% |
+| engagement | 2 | 22.2% |
+| AI/LLM | 1 | 11.1% |
+| career | 1 | 11.1% |
 
 ### serious_tester
 Total posts: 15 | Images: 100.0%
 
 | Category | Count | % |
 |----------|-------|---|
-| API | 9 | 60.0% |
-| engagement | 2 | 13.3% |
+| API | 8 | 53.3% |
+| engagement | 3 | 20.0% |
 | bugs | 2 | 13.3% |
 | AI/LLM | 1 | 6.7% |
 | other | 1 | 6.7% |
@@ -129,11 +129,11 @@ Total posts: 15 | Images: 93.3%
 
 | Category | eddytester % | Competitor avg % | Gap |
 |----------|-------------|-----------------|-----|
-| API | 8.9% | 40.9% | +32.0% |
+| API | 8.9% | 40.1% | +31.2% |
 
 ### Recommendations
 
-- **API** (gap +32.0%) -- У конкурентов в этой теме: разберём, такое, статье, через, тестирование
+- **API** (gap +31.2%) -- У конкурентов в этой теме: через, такое, разберём, статье, тестирование
 
 ---
-*Report generated at 2026-05-21 19:22:34*
+*Report generated at 2026-05-22 09:00:06*

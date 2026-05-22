@@ -41,6 +41,7 @@ SCANNER_FILE = Path("/root/blog-analysis/agents/dev/latest_scan.json")
 #   source: str    scout|scanner|pm|manual|telegram
 #   origin: str    откуда пришло (конкретный источник)
 #   created: str   2026-05-18
+#   last_activity: str  2026-05-18 (обновляется при изменении статуса)
 #   title: str     короткое название
 #   desc: str      описание (optional)
 #   section: str   sprint|queue|scout|dev
@@ -133,6 +134,8 @@ def read_backlog():
                 current_entry["origin"] = tags[1]
             if len(tags) >= 3:
                 current_entry["created"] = tags[2]
+            if len(tags) >= 4:
+                current_entry["last_activity"] = tags[3]
             continue
 
         # Status line continuation
@@ -211,6 +214,9 @@ def write_backlog(entries, sections_order=None):
                 for k in ("source", "origin", "created")
                 if e.get(k)
             )
+            la = e.get("last_activity")
+            if la:
+                tags += f" `{la}`"
             status_icon = {"done": "✅", "cancelled": "❌", "in_progress": "🔄", "active": ""}.get(
                 e.get("status", "active"), ""
             )
@@ -253,13 +259,15 @@ def next_id(entries):
 def add_entry(title, priority="P3", source="manual", origin="manual", desc="", section="Очередь (P2-P3)"):
     """Add a new entry to the backlog."""
     entries, sections = read_backlog()
+    today = datetime.now().strftime("%Y-%m-%d")
     entry = {
         "id": next_id(entries),
         "priority": priority,
         "status": "active",
         "source": source,
         "origin": origin,
-        "created": datetime.now().strftime("%Y-%m-%d"),
+        "created": today,
+        "last_activity": today,
         "title": title,
         "desc": desc,
         "section": strip_icon(section) or "other",
@@ -270,12 +278,18 @@ def add_entry(title, priority="P3", source="manual", origin="manual", desc="", s
     return entry
 
 
+def _touch(e):
+    """Update last_activity to today."""
+    e["last_activity"] = datetime.now().strftime("%Y-%m-%d")
+
+
 def mark_done(entry_id):
     """Mark an entry as done."""
     entries, sections = read_backlog()
     for e in entries:
         if e["id"] == entry_id:
             e["status"] = "done"
+            _touch(e)
             write_backlog(entries, sections)
             log(f"Done: {entry_id} — {e['title']}")
             return True
@@ -288,9 +302,22 @@ def mark_in_progress(entry_id):
     for e in entries:
         if e["id"] == entry_id:
             e["status"] = "in_progress"
+            _touch(e)
             write_backlog(entries, sections)
             return True
     return False
+
+
+def _staleness_days(e):
+    """Days since last_activity (or created fallback). Returns int or None."""
+    raw = e.get("last_activity") or e.get("created")
+    if not raw:
+        return None
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d")
+        return (datetime.now() - d).days
+    except (ValueError, TypeError):
+        return None
 
 
 def get_summary():
@@ -314,7 +341,13 @@ def get_summary():
                     icon = "🔄" if e["status"] == "in_progress" else "·"
                     sid = e["id"]
                     src = e.get("source", "?")
-                    lines.append(f"    {icon} {sid} {e['title']} `{src}`")
+                    stale = _staleness_days(e)
+                    suffix = ""
+                    if stale is not None and stale >= 3:
+                        suffix = f" ⏳{stale}д"
+                    elif stale is not None and stale >= 1:
+                        suffix = f" ({stale}д)"
+                    lines.append(f"    {icon} {sid} {e['title']} `{src}`{suffix}")
                 lines.append("")
 
     lines.append(f"  ✅ {len(done)} завершено · {len(active)} в работе")
@@ -351,6 +384,7 @@ def import_scout():
             "source": source,
             "origin": origin,
             "created": datetime.now().strftime("%Y-%m-%d"),
+            "last_activity": datetime.now().strftime("%Y-%m-%d"),
             "title": title,
             "desc": desc,
             "section": strip_icon(section),
@@ -424,6 +458,7 @@ def import_scanner():
             "source": source,
             "origin": origin,
             "created": datetime.now().strftime("%Y-%m-%d"),
+            "last_activity": datetime.now().strftime("%Y-%m-%d"),
             "title": title,
             "desc": desc,
             "section": strip_icon(section),
