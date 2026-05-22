@@ -9,7 +9,8 @@ BSA Chat — терминальный чат с Business Strategy Advisor @eddyt
 Весь контекст, все инструменты, никаких костылей.
 """
 
-import hashlib, json, os, re, subprocess, sys, readline, shutil
+import hashlib, json, os, re, subprocess, sys, readline, shutil, time
+from openai import OpenAI
 from datetime import datetime
 from pathlib import Path
 
@@ -58,34 +59,47 @@ def load_key():
     return os.environ.get("DEEPSEEK_API_KEY") or ""
 
 
-def call_deepseek(messages, tools=None):
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
     key = load_key()
-    if not key: return None, "No API key"
-    payload = {"model": "deepseek-v4-flash", "messages": messages,
-               "temperature": 0.5, "max_tokens": 16384}
+    if not key:
+        return None
+    _client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+    return _client
+
+
+def call_deepseek(messages, tools=None):
+    client = _get_client()
+    if not client:
+        return None, "No API key"
+
+    kwargs = {
+        "model": "deepseek-v4-flash",
+        "messages": messages,
+        "temperature": 0.5,
+        "max_tokens": 16384,
+    }
     if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
-    try:
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-        tmp.write(json.dumps(payload))
-        tmp.close()
-        r = subprocess.run(
-            ["curl", "-s", "https://api.deepseek.com/chat/completions",
-             "-H", f"Authorization: Bearer {key}",
-             "-H", "Content-Type: application/json",
-             "-d", f"@{tmp.name}"],
-            capture_output=True, text=True, timeout=120)
-        os.unlink(tmp.name)
-        resp = json.loads(r.stdout)
-        choice = resp["choices"][0]
-        msg = choice["message"]
-        if msg.get("tool_calls"): return msg, None
-        return msg, msg["content"]
-    except Exception as e:
-        log(f"API error: {e}")
-        return None, f"Error: {e}"
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+
+    for attempt in range(3):
+        try:
+            resp = client.chat.completions.create(**kwargs)
+            msg = resp.choices[0].message.model_dump()
+            if msg.get("tool_calls"):
+                return msg, None
+            return msg, msg.get("content")
+        except Exception as e:
+            log(f"API error (attempt {attempt+1}/3): {e}")
+            if attempt == 2:
+                return None, f"API error after 3 retries: {e}"
+            time.sleep(1)
 
 
 def _is_allowed(path, allowed):

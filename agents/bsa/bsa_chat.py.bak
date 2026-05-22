@@ -21,7 +21,13 @@ OBSIDIAN_STRAT = VAULT / "Стратегия"
 CONTENT_MAP = Path("/root/blog-analysis/data/content_map_index.json")
 PROMPT_FILE = BASE / "bsa_prompt.txt"
 PROMPT_TRIGGER_FILE = BASE / "bsa_prompt_trigger.txt"
+CONTEXT_FILE = OBSIDIAN_STRAT / "_КОНТЕКСТ.md"
+STRAT_FILE = OBSIDIAN_STRAT / "_СТРАТЕГИЯ.md"
+HEALTH_FILE = OBSIDIAN_STRAT / "_ХЕЛС_СТАТУС.md"
 REQUESTS_FILE = Path("/root/obsidian-vault/requests.md")
+INBOX_FILE = Path("/root/obsidian-vault/inbox.md")
+OUTBOX_FILE = Path("/root/obsidian-vault/outbox.md")
+VAULT_DIR = Path("/root/obsidian-vault")
 LOG_FILE = Path("/root/blog-analysis/logs/bsa_chat.log")
 ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
                      str(Path("/root/obsidian-vault")),
@@ -32,6 +38,7 @@ ALLOWED_READ_DIRS = [str(VAULT), str(OBSIDIAN_STRAT),
 ALLOWED_WRITE_DIRS = [str(OBSIDIAN_STRAT), str(Path("/root/obsidian-vault"))]
 ALLOWED_AGENTS = {"bsa": str(AGENTS_DIR / "bsa/bsa_agent.py"),
                   "pm": str(AGENTS_DIR / "orchestrator/pm_agent.py")}
+TG_OUTGOING = BASE / "outgoing"
 
 os.makedirs(LOG_FILE.parent, exist_ok=True)
 
@@ -55,7 +62,7 @@ def call_deepseek(messages, tools=None):
     key = load_key()
     if not key: return None, "No API key"
     payload = {"model": "deepseek-v4-flash", "messages": messages,
-               "temperature": 0.5, "max_tokens": 4096}
+               "temperature": 0.5, "max_tokens": 16384}
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
@@ -113,6 +120,21 @@ def tool_list_dir(**kwargs):
         p = Path(dp)
         return "\n".join(f.name + ("/" if f.is_dir() else f"  ({f.stat().st_size}b)") for f in p.iterdir())
     except Exception as e: return f"Error: {e}"
+
+def tool_glob_files(**kwargs):
+    pattern = kwargs.get("pattern") or kwargs.get("glob") or ""
+    if not pattern: return "Error: pattern required"
+    try:
+        vault = Path("/root/obsidian-vault")
+        if not vault.exists():
+            return "Error: vault not found"
+        files = list(vault.rglob(pattern))
+        return "\n".join(
+            str(f.relative_to(vault)) for f in sorted(files)
+            if f.is_file() and _is_allowed(f, ALLOWED_READ_DIRS)
+        ) or "No matches"
+    except Exception as e:
+        return f"Error: {e}"
 
 def tool_run_researcher(topic):
     if len(topic) > 500: return "Error: topic too long"
@@ -173,128 +195,518 @@ def tool_send_email(subject, body, to="eddy.super1@gmail.com"):
 
 
 def tool_update_status(task_text, status="running", detail=""):
-    """Update task status in requests.md. Preserves user section and context section."""
+    """Update task in Активные задачи or move to Архив section (lines-based)."""
     try:
-        content = REQUESTS_FILE.read_text(encoding="utf-8")
-        status_marker = "-----статус BSA-----"
-        context_marker = "-----контекст задач-----"
+        emoji = {"done": "\u2705", "running": "\U0001f504", "failed": "\u274c", "pending": "\u23f3"}
+        e = emoji.get(status, "\U0001f504")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        d = f" \u2192 {detail}" if detail else ""
+        task_entry = f"- {task_text} \u2192 {e}{d} ({ts})"
 
-        status_idx = content.find(status_marker)
-        if status_idx == -1:
-            return "Error: status section not found"
+        content = OUTBOX_FILE.read_text(encoding="utf-8") if OUTBOX_FILE.exists() else ""
+        if not content.strip():
+            content = "# Outbox\n\n## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438\n\n## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f\n\n## \u0410\u0440\u0445\u0438\u0432\n"
 
-        after_marker = content[status_idx + len(status_marker):]
-        context_idx = after_marker.find(context_marker)
-        existing_status = after_marker[:context_idx] if context_idx != -1 else after_marker
-        rest = after_marker[context_idx:] if context_idx != -1 else ""
+        lines = content.split("\n")
+        active_idx = discuss_idx = archive_idx = None
+        for i, line in enumerate(lines):
+            s = line.strip()
+            if s == "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438":
+                active_idx = i
+            elif s == "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f":
+                discuss_idx = i
+            elif s == "## \u0410\u0440\u0445\u0438\u0432":
+                archive_idx = i
 
-        # Parse existing status entries
-        known_tasks = {}
-        for line in existing_status.split("\n"):
-            ls = line.strip()
-            m = re.match(r"^([\u2705\U0001f504\u274c\u23f3])\s+(.+?)(?:\s*(?:\u2192)\s*(.+))?$", ls)
-            if m:
-                emoji_map = {"\u2705": "done", "\U0001f504": "running", "\u274c": "failed", "\u23f3": "pending"}
-                txt = m.group(2).strip()
-                det = m.group(3).strip() if m.group(3) else ""
-                clean = re.sub(r"\s*\(\u0432\u0437\u044f\u0442\u043e \d+:\d+\)", "", txt).strip()
-                known_tasks[clean] = {"status": emoji_map.get(m.group(1), "running"), "detail": det, "taken_at": ""}
+        def find_task_in_section(start, end):
+            for i in range(start + 1, end if end else len(lines)):
+                s = lines[i].strip()
+                if task_text in s and s.startswith("- "):
+                    return i
+            return None
 
-        # Update/add the task
-        known_tasks[task_text] = {"status": status, "detail": detail, "taken_at": ""}
+        if status in ("done", "failed") and active_idx is not None:
+            task_line = find_task_in_section(active_idx, discuss_idx or archive_idx or len(lines))
+            if task_line is not None:
+                lines.pop(task_line)
+                if archive_idx is not None:
+                    lines.insert(archive_idx + 1, task_entry)
+                else:
+                    lines.append("")
+                    lines.append("## \u0410\u0440\u0445\u0438\u0432")
+                    lines.append(task_entry)
+            else:
+                if archive_idx is not None:
+                    lines.insert(archive_idx + 1, task_entry)
+                else:
+                    lines.append("")
+                    lines.append("## \u0410\u0440\u0445\u0438\u0432")
+                    lines.append(task_entry)
 
-        # Build new status block
-        lines = [status_marker, ""]
-        running = {k: v for k, v in known_tasks.items() if v["status"] in ("running", "pending")}
-        done = {k: v for k, v in known_tasks.items() if v["status"] == "done"}
-        # Dedup running vs done
-        for k in list(running):
-            if k in done:
-                del running[k]
-        # Safety: remove running entries not matching current user tasks
-        # (handles BSA task shortening leaving stale keys)
-        try:
-            user_sec = content.split("-----задачи к BSA-----")[1].split("-----статус BSA-----")[0]
-            user_tasks = set()
-            for line in user_sec.split(chr(10)):
-                line = line.strip().rstrip("!").strip()
-                if line and not line.startswith("-"):
-                    user_tasks.add(line)
-            if user_tasks:
-                stale = [k for k in running if k not in user_tasks]
-                for k in stale:
-                    del running[k]
-        except Exception:
-            pass
-        if running:
-            lines.append("\u0412 \u0440\u0430\u0431\u043e\u0442\u0435:")
-            for text in running:
-                lines.append(f"\U0001f504 {text}")
-            lines.append("")
-        if done:
-            lines.append("\u0413\u043e\u0442\u043e\u0432\u043e:")
-            for text, info in done.items():
-                d = f" \u2192 {info['detail']}" if info.get('detail') else ""
-                lines.append(f"\u2705 {text}{d}")
-            lines.append("")
-        if not running and not done:
-            lines.append("(\u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447)")
-            lines.append("")
+        elif active_idx is not None:
+            task_line = find_task_in_section(active_idx, discuss_idx or archive_idx or len(lines))
+            if task_line is not None:
+                lines[task_line] = task_entry
+            else:
+                lines.insert(active_idx + 1, task_entry)
+        else:
+            lines = ["# Outbox", "", "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438",
+                     task_entry, "", "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f", "", "## \u0410\u0440\u0445\u0438\u0432"]
 
-        new_status = "\n".join(lines)
-        before = content[:status_idx]
-        REQUESTS_FILE.write_text(before + new_status + "\n" + rest, encoding="utf-8")
-        # Write BSA_LOG.md entry when task is done
-        if status == "done" and detail:
-            try:
-                log_path = VAULT.parent / "BSA_LOG.md"
-                now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                entry = f"- {now} \u2705 {task_text} \u2192 {detail}\n"
-                with open(str(log_path), "a") as lf:
-                    lf.write(entry)
-            except Exception:
-                pass
-        return f"Status updated: {task_text} \u2192 {status}"
+        OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
+
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        if r.returncode != 0:
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + ts], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+        return task_text + " \u2192 " + status + " (\u0441\u0435\u043a\u0446\u0438\u044f outbox.md \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0430)"
     except Exception as e:
-        log(f"update_status error: {e}")
-        return f"Error: {e}"
-
+        log("update_status error: " + str(e))
+        return "Error: " + str(e)
 
 def tool_shorten_task(old_text, new_text):
-    """Replace old task text with shorter version in requests.md."""
+    """Replace old task text with shorter version."""
     try:
-        content = REQUESTS_FILE.read_text(encoding="utf-8")
+        content = INBOX_FILE.read_text(encoding="utf-8") if INBOX_FILE.exists() else ""
         if old_text not in content:
-            return f"Error: '{old_text}' not found"
+            return "Note: '" + old_text + "' not found in inbox (may already be processed)"
         content = content.replace(old_text, new_text)
-        REQUESTS_FILE.write_text(content, encoding="utf-8")
-        return f"Shortened: {old_text} \u2192 {new_text}"
+        INBOX_FILE.write_text(content, encoding="utf-8")
+        return "Shortened: " + old_text + " \u2192 " + new_text
     except Exception as e:
-        return f"Error: {e}"
-
+        return "Error: " + str(e)
 
 def tool_discuss_reply(response_text):
-    """Append BSA response to -----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f----- section in requests.md."""
+    """Append to \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f section in outbox.md (lines-based).
+    Auto-detects \u044d\u044d\u044d (new thread) and adds visual separator."""
     try:
-        content = REQUESTS_FILE.read_text(encoding="utf-8")
-        discuss_marker = "-----\u0434\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f-----"
-        context_marker = "-----\u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u0437\u0430\u0434\u0430\u0447-----"
-        if discuss_marker not in content:
-            return "Error: discussion section not found"
+        last_question = ""
+        is_new_tread = False
+        try:
+            inbox = INBOX_FILE.read_text(encoding="utf-8")
+            for line in reversed(inbox.split("\n")):
+                stripped = line.strip()
+                if stripped.startswith("\u044d\u044d") and stripped.endswith("!"):
+                    last_question = stripped
+                    is_new_tread = stripped.startswith("\u044d\u044d\u044d")
+                    break
+        except Exception:
+            pass
+
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        reply = f"\n{ts} **BSA:** {response_text}"
-        discuss_idx = content.index(discuss_marker) + len(discuss_marker)
-        after = content[discuss_idx:]
-        context_idx = after.find(context_marker) if context_marker in after else -1
-        if context_idx != -1:
-            new_content = content[:discuss_idx] + after[:context_idx] + reply + "\n" + after[context_idx:]
+        block_lines = []
+        if is_new_tread:
+            block_lines.append("--- * * * ---")
+        if last_question:
+            block_lines.append(f"**\u0422\u044b:** {last_question.rstrip('!')}")
+            block_lines.append("")
+            block_lines.append(f"**Bizzy:** {response_text} ({ts})")
         else:
-            new_content = content + reply + "\n"
-        REQUESTS_FILE.write_text(new_content, encoding="utf-8")
-        return f"\u2705 Response written ({len(response_text)} chars)"
+            block_lines.append(f"**Bizzy:** {response_text} ({ts})")
+
+        content = OUTBOX_FILE.read_text(encoding="utf-8") if OUTBOX_FILE.exists() else ""
+        lines = content.split("\n") if content.strip() else []
+
+        # Find \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f section
+        discuss_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == "## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f":
+                discuss_idx = i
+                break
+
+        if discuss_idx is not None:
+            # Insert block after header (insert at first empty line after header)
+            insert_at = discuss_idx + 1
+            while insert_at < len(lines) and lines[insert_at].strip() == "":
+                insert_at += 1
+            # Ensure blank line between block and next section
+            if insert_at < len(lines) and lines[insert_at].startswith("## "):
+                # No empty line before next section, insert block with trailing blank
+                for bl in reversed(block_lines):
+                    lines.insert(insert_at, bl)
+                lines.insert(insert_at + len(block_lines), "")
+            else:
+                for bl in reversed(block_lines):
+                    lines.insert(insert_at, bl)
+        else:
+            if not lines:
+                lines = ["# Outbox", "", "## \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u0434\u0430\u0447\u0438", "", "## \u0410\u0440\u0445\u0438\u0432"]
+            lines.append("")
+            lines.append("## \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f")
+            lines.append("")
+            lines.extend(block_lines)
+
+        OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
+
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        if r.returncode != 0:
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: discuss " + ts], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+        return "\u2705 Response added to \u0421\u0435\u043a\u0446\u0438\u044f \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f (" + str(len(response_text)) + " chars)"
     except Exception as e:
-        log(f"discuss_reply error: {e}")
+        log("discuss_reply error: " + str(e))
+        return "Error: " + str(e)
+
+
+def _push_to_telegram(text):
+    """Push a text message to the Telegram bot outgoing queue."""
+    if not text:
+        return
+    try:
+        os.makedirs(TG_OUTGOING, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:20]
+        (TG_OUTGOING / f"out_{ts}.json").write_text(json.dumps({
+            "text": text, "created_at": datetime.now().isoformat(),
+            "retries": 0, "failed": False,
+        }, ensure_ascii=False))
+        log(f"Pushed to Telegram outgoing: {len(text)} chars")
+    except Exception as e:
+        log(f"Telegram push failed: {e}")
+
+
+def tool_check_channel(query):
+    """Check Telegram channel posts. Usage: "latest", "post 414", "post 414 comments", or any t.me URL."""
+    try:
+        import subprocess, os
+        base = "/root/blog-analysis/agents/bsa"
+        cmd = [sys.executable or "python3", os.path.join(base, "channel_checker.py")]
+        parts = query.strip().split()
+        if not parts:
+            cmd.extend(["--posts", "1"])
+        elif parts[0].startswith("http") or parts[0].startswith("t.me"):
+            # URL-based lookup: extract URL, check for comments flag
+            url = parts[0]
+            cmd.extend(["--url", url])
+            if "comments" in parts or "comment" in parts:
+                cmd.append("--comments")
+        elif parts[0] == "latest":
+            count = parts[1] if len(parts) > 1 and parts[1].isdigit() else "1"
+            cmd.extend(["--posts", str(count)])
+        elif parts[0] == "post" and len(parts) > 1:
+            cmd.extend(["--post", parts[1]])
+            if "comments" in parts or "comment" in parts:
+                cmd.append("--comments")
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        out = r.stdout[-4000:] or r.stderr[-4000:]
+        return out[:4000]
+    except Exception as e:
         return f"Error: {e}"
+
+
+def tool_download_channel(channel, posts=200, post_id=0, comments=False):
+    """Download posts from ANY Telegram channel."""
+    try:
+        base = "/root/blog-analysis/agents/bsa"
+        downloader = os.path.join(base, "channel_downloader.py")
+        cmd = [sys.executable or "python3", downloader,
+               "--channel", channel, "--posts", str(posts), "--format", "summary"]
+        if post_id:
+            cmd = [sys.executable or "python3", downloader,
+                   "--channel", channel, "--post", str(post_id)]
+            if comments:
+                cmd.append("--comments")
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        out = r.stdout or r.stderr
+        return out[:5000]
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def tool_backlog(command):
+    """Manage backlog: add, done, summary."""
+    try:
+        import sys
+        sys.path.insert(0, "/root/blog-analysis/agents/bsa")
+        from backlog import add_entry, mark_done, get_summary, mark_in_progress
+
+        cmd = command.strip()
+        if cmd.startswith("add "):
+            rest = cmd[4:].strip()
+            priority = "P3"
+            title = rest
+            if rest.startswith("[") and rest[1] in "P0123":
+                priority = f"P{rest[2]}" if len(rest) > 2 and rest[2].isdigit() else "P3"
+                title = rest[4:].strip() if len(rest) > 4 else rest
+            elif len(rest) > 2 and rest[0:2] in ("P0", "P1", "P2", "P3") and rest[2:3] in (" ", ""):
+                priority = rest[0:2]
+                title = rest[3:].strip()
+            entry = add_entry(title, priority=priority, source="telegram", origin="bizzy")
+            return f"Done: Added {entry['id']} [{priority}]"
+
+        if cmd.startswith("done "):
+            eid = cmd[5:].strip()
+            if mark_done(eid):
+                return f"Done: {eid} completed"
+            return f"Done: {eid} not found"
+
+        if cmd.startswith("in_progress ") or cmd.startswith("ip "):
+            rest = cmd[len("in_progress "):].strip() if cmd.startswith("in_progress ") else cmd[3:].strip()
+            eid = rest.strip()
+            if mark_in_progress(eid):
+                return f"Done: {eid} in progress"
+            return f"Done: {eid} not found"
+
+        return get_summary()
+    except Exception as e:
+        return f"Backlog error: {e}"
+
+def tool_propose_bug(endpoint, description, repo="api-practicum"):
+    import json
+    from datetime import datetime
+    proposals_dir = Path(__file__).resolve().parent / "pending_proposals"
+    proposals_dir.mkdir(exist_ok=True)
+    proposal = {
+        "id": datetime.now().strftime("PROP-%Y%m%d-%H%M%S"),
+        "endpoint": endpoint,
+        "description": description,
+        "repo": repo,
+        "status": "pending",
+        "source": "telegram",
+        "created_at": datetime.now().isoformat(),
+    }
+    fpath = proposals_dir / "{}.json".format(proposal["id"])
+    fpath.write_text(json.dumps(proposal, ensure_ascii=False, indent=2))
+    return "Proposal {}: {} - {}".format(proposal["id"], endpoint, description[:100])
+
+
+def tool_analyzer_add_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import add_channel
+        return add_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_remove_channel(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import remove_channel
+        return remove_channel(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_channel_stats(channel):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_channel_stats
+        return get_channel_stats(channel)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_notable(category=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_notable_summary
+        return get_notable_summary(category if category else None)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_search(query):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import search_posts
+        return search_posts(query)
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_report():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import get_daily_report
+        return get_daily_report()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_list_channels():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import list_channels
+        return list_channels()
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_analyzer_strategy_review():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from strategy_review import build_review, save_review
+        review = build_review()
+        fpath = save_review(review)
+        chart_count = len(review["charts"])
+        return (f"✅ Стратегический обзор сгенерирован.\n"
+                f"Файл: {fpath}\n"
+                f"Графиков: {chart_count}")
+    except Exception as e:
+        return f"Analyzer error: {e}"
+
+def tool_query_channel_metrics(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_channel_metrics
+        return query_channel_metrics(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_top_posts(channel, limit=5, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_top_posts
+        return query_top_posts(channel, limit, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_category_performance(channel, days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_category_performance
+        return query_category_performance(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_competitor_comparison(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_competitor_comparison
+        return query_competitor_comparison(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_post_trend(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_post_trend
+        return query_post_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_content_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_content_profile
+        return query_content_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_goal_profile(days=7):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_goal_profile
+        return query_goal_profile(days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_query_subscriber_trend(channel, days=30):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_trend
+        return query_subscriber_trend(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_check_health():
+    """Run health check on all APIs and return current status."""
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from health_checker import test_practicum, test_free_trial, write_report
+        import os
+        practicum = test_practicum()
+        free_trial = test_free_trial()
+        report = write_report(practicum, free_trial)
+
+        # Summarize
+        lines = ["🩺 **Health check results:**", ""]
+        for label, result in [("Practicum", practicum), ("Free Trial", free_trial)]:
+            if result["status"] == "skipped":
+                lines.append(f"  ⚪ {label}: не настроен")
+                continue
+            failures = [r for r in result.get("results", []) if r["status"] == "fail"]
+            passes = [r for r in result.get("results", []) if r["status"] == "pass"]
+            if failures:
+                lines.append(f"  🔴 {label}: {len(failures)} failed")
+                for f in failures:
+                    lines.append(f"    - {f['test']}: {f['detail'][:100]}")
+            else:
+                lines.append(f"  🟢 {label}: {len(passes)}/{len(result['results'])} passed")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Health check error: {e}"
+
+
+def tool_query_subscriber_impact(channel, days=14):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from bizzy_bridge import query_subscriber_impact
+        return query_subscriber_impact(channel, days)
+    except Exception as e:
+        return f"Query error: {e}"
+
+def tool_category_add_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_keyword
+        return add_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_remove_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_keyword
+        return remove_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_list_overrides():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_overrides
+        return list_overrides()
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_suppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import suppress_keyword
+        return suppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_category_unsuppress_keyword(category_type, category, keyword):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import unsuppress_keyword
+        return unsuppress_keyword(category_type, category, keyword)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_add(name, formula, description=""):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import add_custom_metric
+        return add_custom_metric(name, formula, description)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_remove(name):
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import remove_custom_metric
+        return remove_custom_metric(name)
+    except Exception as e:
+        return f"Runtime config error: {e}"
+
+def tool_custom_metric_list():
+    try:
+        import sys; sys.path.insert(0, str(BASE.parent / "content_analyzer"))
+        from runtime_config import list_custom_metrics
+        return list_custom_metrics()
+    except Exception as e:
+        return f"Runtime config error: {e}"
 
 
 TOOLS = [{"type": "function", "function": {
@@ -344,14 +756,255 @@ TOOLS = [{"type": "function", "function": {
         "old_text": {"type": "string"},
         "new_text": {"type": "string"}
     }, "required": ["old_text", "new_text"]}
-}}]
+}}, {"type": "function", "function": {
+    "name": "check_channel",
+    "description": "Check @eddytester channel or any t.me URL. Usage: \"latest\", \"latest 3\", \"post 414\", \"post 414 comments\", or paste a t.me/username/123 link",
+    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+}}, {"type": "function", "function": {
+    "name": "download_channel",
+    "description": "Download posts from ANY Telegram channel. Use for competitor channels like @rvtsakunov. Returns summary with total, date range, media count. Examples: \"download @rvtsakunov 200\", \"download @rvtsakunov 5000\" (batched with delays).",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string", "description": "Channel @username or ID"},
+        "posts": {"type": "integer", "description": "Number of posts to download (default 200, no hard limit)"}
+    }, "required": ["channel"]}
+}}
+, {"type": "function", "function": {
+    "name": "backlog",
+    "description": "Manage backlog: \"add P2 Title\", \"done B-001\", \"summary\", \"ip B-001\"",
+    "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}
+}}
+, {"type": "function", "function": {
+    "name": "glob_files",
+    "description": "Find files by glob pattern in Obsidian vault (recursive). Examples: \"*.md\", \"**/*.md\", \"Пост_*\", \"eddytester/**/*.md\"",
+    "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}
+}},
+{"type": "function", "function": {
+    "name": "propose_bug",
+    "description": "Create a bug proposal for practicum API repos. Specify endpoint, description, and optionally repo.",
+    "parameters": {"type": "object", "properties": {
+        "endpoint": {"type": "string"},
+        "description": {"type": "string"},
+        "repo": {"type": "string", "enum": ["api-practicum", "free-trial-api", "api-practicum-bot"]}
+    }, "required": ["endpoint", "description"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_add_channel",
+    "description": "Add a Telegram channel to the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_remove_channel",
+    "description": "Remove a Telegram channel from the content monitoring pool",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_channel_stats",
+    "description": "Get analytics stats for a specific channel",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_notable",
+    "description": "Get top notable posts (optionally filter by category)",
+    "parameters": {"type": "object", "properties": {
+        "category": {"type": "string"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_search",
+    "description": "Search posts by text across all monitored channels",
+    "parameters": {"type": "object", "properties": {
+        "query": {"type": "string"}
+    }, "required": ["query"]}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_report",
+    "description": "Get daily content analysis report",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_list_channels",
+    "description": "List all channels in the monitoring pool",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "analyzer_strategy_review",
+    "description": "Generate a weekly strategic review with charts — per-channel metrics, format analysis with confidence, competitor gaps, and recommendations",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_channel_metrics",
+    "description": "Get avg views/forwards/replies/engagement/notable for a channel over N days. Returns clean numbers. Example: query_channel_metrics @qachanell 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string", "description": "Channel @username"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_top_posts",
+    "description": "Get top posts by engagement for a channel. Returns post text, views, forwards, replies. Example: query_top_posts @eddytester 5 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "limit": {"type": "integer", "description": "Number of top posts (default 5)"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_category_performance",
+    "description": "Breakdown of posts by category for a channel — posts count, avg views, forwards, replies, notable per category. Example: query_category_performance @eddytester 7",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_competitor_comparison",
+    "description": "Compare ALL active channels side by side — posts, avg views, engagement, reach rate, notable count. No channel param needed. Example: query_competitor_comparison 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days to look back (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_post_trend",
+    "description": "Daily average views trend with ASCII bar chart for a channel. Example: query_post_trend @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "query_content_profile",
+    "description": "Compare topic categories across ALL channels — what % of posts falls into each topic (api/bugs, tools, career, etc.). Example: query_content_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "query_goal_profile",
+    "description": "Compare post INTENT (прогрев, экспертиза, продажа, hot_take, news, meta) across ALL channels. Shows which channels warm up, sell, or educate. Example: query_goal_profile 7",
+    "parameters": {"type": "object", "properties": {
+        "days": {"type": "integer", "description": "Days (default 7)"}
+    }}
+}},
+{"type": "function", "function": {
+    "name": "category_add_keyword",
+    "description": "Add a keyword to a category. category_type: CATEGORY_KEYWORDS (topic) or GOAL_KEYWORDS (intent). Example: category_add_keyword CATEGORY_KEYWORDS api/bugs restassured",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_remove_keyword",
+    "description": "Remove a keyword override from a category.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_list_overrides",
+    "description": "Show all category keyword overrides.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "category_suppress_keyword",
+    "description": "Suppress a base keyword from matching. Fixes false positives. Example: category_suppress_keyword CATEGORY_KEYWORDS api/bugs ошибк",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "category_unsuppress_keyword",
+    "description": "Remove a keyword from the suppression list.",
+    "parameters": {"type": "object", "properties": {
+        "category_type": {"type": "string", "enum": ["CATEGORY_KEYWORDS", "GOAL_KEYWORDS"]},
+        "category": {"type": "string"},
+        "keyword": {"type": "string"}
+    }, "required": ["category_type", "category", "keyword"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_add",
+    "description": "Add a custom metric. Formula can use: avg_views, avg_forwards, avg_replies, subscribers, posts, notable. Example: custom_metric_add engagement_rate 'avg_views / NULLIF(subscribers, 0)' 'Views per subscriber'",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"},
+        "formula": {"type": "string", "description": "Python expression using: avg_views, avg_forwards, avg_replies, subscribers, posts, notable"},
+        "description": {"type": "string"}
+    }, "required": ["name", "formula"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_remove",
+    "description": "Remove a custom metric by name.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string"}
+    }, "required": ["name"]}
+}},
+{"type": "function", "function": {
+    "name": "custom_metric_list",
+    "description": "List all custom metrics.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_trend",
+    "description": "Get subscriber count trend for a channel over N days. Example: query_subscriber_trend @eddytester 30",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 30)"}
+    }, "required": ["channel"]}
+}},
+{"type": "function", "function": {
+    "name": "check_health",
+    "description": "Run on-demand health check on Practicum + Free Trial APIs. Tests POST create user + GET verify.",
+    "parameters": {"type": "object", "properties": {}}
+}},
+{"type": "function", "function": {
+    "name": "query_subscriber_impact",
+    "description": "Show daily subscriber deltas with posts — approximate per-post unsubscribe impact. Example: query_subscriber_impact @eddytester 14",
+    "parameters": {"type": "object", "properties": {
+        "channel": {"type": "string"},
+        "days": {"type": "integer", "description": "Days to look back (default 14)"}
+    }, "required": ["channel"]}
+}}
+]
 
 TOOL_MAP = {"read_file": tool_read_file, "write_file": tool_write_file, "update_status": tool_update_status, "shorten_task": tool_shorten_task,
-            "list_dir": tool_list_dir, "run_researcher": tool_run_researcher,
+            "list_dir": tool_list_dir, "glob_files": tool_glob_files, "run_researcher": tool_run_researcher,
             "run_content_manager": tool_run_content_manager,
             "run_pm_agent": tool_run_pm_agent,
             "run_agent": tool_run_agent, "send_email": tool_send_email,
-            "discuss_reply": tool_discuss_reply}
+            "check_channel": tool_check_channel, "download_channel": tool_download_channel, "backlog": tool_backlog, "discuss_reply": tool_discuss_reply, "propose_bug": tool_propose_bug,
+            "analyzer_add_channel": tool_analyzer_add_channel, "analyzer_remove_channel": tool_analyzer_remove_channel,
+            "analyzer_channel_stats": tool_analyzer_channel_stats, "analyzer_notable": tool_analyzer_notable,
+            "analyzer_search": tool_analyzer_search, "analyzer_report": tool_analyzer_report,
+            "analyzer_list_channels": tool_analyzer_list_channels,
+            "analyzer_strategy_review": tool_analyzer_strategy_review,
+            "query_channel_metrics": tool_query_channel_metrics,
+            "query_top_posts": tool_query_top_posts,
+            "query_category_performance": tool_query_category_performance,
+            "query_competitor_comparison": tool_query_competitor_comparison,
+            "query_post_trend": tool_query_post_trend,
+            "query_content_profile": tool_query_content_profile,
+            "query_goal_profile": tool_query_goal_profile,
+            "category_add_keyword": tool_category_add_keyword,
+            "category_remove_keyword": tool_category_remove_keyword,
+            "category_list_overrides": tool_category_list_overrides,
+            "category_suppress_keyword": tool_category_suppress_keyword,
+            "category_unsuppress_keyword": tool_category_unsuppress_keyword,
+            "custom_metric_add": tool_custom_metric_add,
+            "custom_metric_remove": tool_custom_metric_remove,
+            "custom_metric_list": tool_custom_metric_list,
+            "check_health": tool_check_health,
+            "query_subscriber_trend": tool_query_subscriber_trend,
+            "query_subscriber_impact": tool_query_subscriber_impact}
 
 
 def build_prompt():
@@ -364,13 +1017,19 @@ def build_prompt():
             extra.append("\n\nRecent posts:\n" + "\n".join(
                 f"- {p.get('title','?')} ({p.get('date','?')})" for p in recent))
         except: pass
+    if CONTEXT_FILE.exists():
+        extra.append(f"\n\n## Твой контекст (ты можешь его обновлять write_file):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува Эдди):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     files = list(OBSIDIAN_STRAT.glob("*.md")) if OBSIDIAN_STRAT.exists() else []
     if files: extra.append(f"\nStrategy files: {', '.join(f.name for f in files)}")
     return p + "\n".join(extra)
 
 
 def run_conversation(messages):
-    for _ in range(12):
+    for _ in range(40):
         msg, text = call_deepseek(messages, tools=TOOLS)
         if msg is None:
             return f"Error: {text}", messages
@@ -379,10 +1038,35 @@ def run_conversation(messages):
             for tc in msg["tool_calls"]:
                 fn = tc["function"]
                 fn_name, args_str = fn["name"], fn["arguments"]
-                try: args = json.loads(args_str)
-                except: args = {}
+                try:
+                    args = json.loads(args_str)
+                except json.JSONDecodeError as e:
+                    log(f"Tool {fn_name}: bad args: {e}")
+                    messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                     "content": f"⚠️ Bizzy, я не смог разобрать аргументы для '{fn_name}': {e}. "
+                                                f"Проверь формат JSON и попробуй снова."})
+                    continue
+
                 log(f"Tool: {fn_name}")
-                result = TOOL_MAP.get(fn_name, lambda **_: f"Unknown tool: {fn_name}")(**args)
+
+                tool_fn = TOOL_MAP.get(fn_name)
+                if tool_fn is None:
+                    known = [k for k in TOOL_MAP.keys() if fn_name in k]
+                    hint = f"Возможно, ты имел в виду: {', '.join(known[:3])}?" if known else "Проверь название инструмента."
+                    messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                     "content": f"⚠️ Неизвестный инструмент: '{fn_name}'. {hint}"})
+                    continue
+
+                try:
+                    result = tool_fn(**args)
+                except TypeError as e:
+                    log(f"Tool {fn_name}: arg mismatch: {e}")
+                    result = (f"⚠️ Инструмент '{fn_name}' получил неправильные аргументы: {e}. "
+                              f"Проверь названия параметров и их типы.")
+                except Exception as e:
+                    log(f"Tool {fn_name} crashed: {e}")
+                    result = f"⚠️ Инструмент '{fn_name}' упал с ошибкой: {type(e).__name__}: {e}"
+
                 messages.append({"role": "tool", "tool_call_id": tc["id"],
                                  "content": str(result)[:10000]})
             continue
@@ -391,7 +1075,7 @@ def run_conversation(messages):
 
 
 def trigger_mode():
-    """One-shot BSA session: read requests.md, decide, delegate, update status."""
+    """One-shot BSA session: read inbox.md, decide, delegate, write to outbox.md."""
     if not load_key():
         log("ERROR: No API key in trigger mode")
         print("ERROR: DeepSeek API key not found", file=sys.stderr)
@@ -415,6 +1099,12 @@ def trigger_mode():
             extra.append("\nRecent posts:\n" + "\n".join(
                 f"- {p.get('title','?')} ({p.get('date','?')})" for p in recent))
         except: pass
+    if CONTEXT_FILE.exists():
+        extra.append(f"\n\n## Твой контекст (обновляй его write_file когда узнаёшь новые факты):\n{CONTEXT_FILE.read_text(encoding='utf-8')}")
+    if STRAT_FILE.exists():
+        extra.append(f"\n\n## Текущая стратегия (обновляй write_file после аппрува):\n{STRAT_FILE.read_text(encoding='utf-8')}")
+    if HEALTH_FILE.exists():
+        extra.append(f"\n\n## Статус API (хелс-чек):\n{HEALTH_FILE.read_text(encoding='utf-8')}")
     strat_dir = OBSIDIAN_STRAT
     sfiles = list(strat_dir.glob("*.md")) if strat_dir.exists() else []
     if sfiles:
@@ -422,72 +1112,144 @@ def trigger_mode():
 
     full_prompt = prompt_text + "\n".join(extra)
 
+    # Pre-read inbox.md so BSA doesn't need read_file tool for it
+    inbox_content = INBOX_FILE.read_text(encoding="utf-8") if INBOX_FILE.exists() else "File not found"
+
     messages = [
         {"role": "system", "content": full_prompt},
         {"role": "user", "content": (
-            "Новое сообщение в requests.md. "
-            "Прочитай файл, пойми что нужно, прими решение и действуй. "
-            "После завершения обнови статус в requests.md.")}
+            "Вот текущее содержимое inbox.md:\n\n"
+            + inbox_content +
+            "\n\nПроанализируй, прими решение и действуй. "
+            "После завершения пиши ответы в outbox.md.")}
     ]
 
-    # Run conversation (max 8 iterations)
+    # Run conversation (max 40 iterations)
     resp, _ = run_conversation(messages)
 
     if resp:
         log(f"BSA trigger response: {resp[:300]}...")
         print(resp)
+        _push_to_telegram(resp)
     else:
         log("BSA trigger: completed (tool calls only)")
         print("BSA trigger: completed")
 
+    # Auto-commit outbox.md changes if BSA wrote via write_file
+    try:
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        if r.returncode != 0:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: auto-commit " + now], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+    except Exception as e:
+        log("auto-commit error: " + str(e))
+
     log("BSA trigger mode completed")
 
-
 def discuss_mode(question):
-    """BSA discussion mode: answer user question and write reply."""
+    """BSA discussion mode: answer user question, write to outbox.md.
+    ээ = continue thread (pass history from outbox.md)
+    эээ = new thread (fresh context, skip idempotency)"""
     if not load_key():
         log("ERROR: No API key in discuss mode")
         sys.exit(1)
     log("BSA discuss mode started")
 
+    is_new_tread = question.strip().startswith("\u044d\u044d\u044d")
+    
+    # Idempotency: skip for new threads (\u044d\u044d\u044d)
+    if not is_new_tread:
+        try:
+            if INBOX_FILE.exists():
+                inbox = INBOX_FILE.read_text(encoding="utf-8")
+                last_inbox_question = ""
+                for line in reversed(inbox.split("\n")):
+                    stripped = line.strip()
+                    if stripped.startswith("\u044d\u044d") and stripped.endswith("!"):
+                        last_inbox_question = stripped
+                        break
+
+                if last_inbox_question and OUTBOX_FILE.exists():
+                    outbox = OUTBOX_FILE.read_text(encoding="utf-8")
+                    last_outbox_question = ""
+                    for line in reversed(outbox.split("\n")):
+                        if line.strip().startswith("**\u0422\u044b:**"):
+                            parts = line.split("**\u0422\u044b:**", 1)
+                            if len(parts) > 1:
+                                last_outbox_question = parts[1].strip()
+                            break
+
+                    if last_inbox_question and last_outbox_question:
+                        import unicodedata
+                        n_in = unicodedata.normalize("NFC", last_inbox_question.strip())
+                        n_out = unicodedata.normalize("NFC", last_outbox_question.strip())
+                        if n_in == n_out:
+                            log("Idempotency: last question already answered in outbox.md, skipping")
+                            print("Already answered in outbox.md, skipping")
+                            return
+        except Exception as e:
+            log("Idempotency check failed (non-critical): " + str(e))
+
     discuss_prompt_file = BASE / "bsa_prompt_discuss.txt"
-    prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+    discuss_prompt_text = discuss_prompt_file.read_text(encoding="utf-8") if discuss_prompt_file.exists() else "You are BSA. Answer the user's question."
+
+    # For continue thread (\u044d\u044d): add history from outbox.md
+    if not is_new_tread:
+        try:
+            if OUTBOX_FILE.exists():
+                outbox_history = OUTBOX_FILE.read_text(encoding="utf-8").strip()
+                if outbox_history:
+                    # Keep last 4000 chars to avoid blowing context window
+                    if len(outbox_history) > 4000:
+                        outbox_history = "...(\u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0440\u0435\u0437\u0430\u043d\u0430)...\n" + outbox_history[-4000:]
+                    history_note = "\n\n## \u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u044f (\u0438\u0437 outbox.md):\n" + outbox_history + "\n\n\u042d\u0442\u043e \u043f\u0440\u043e\u0448\u043b\u044b\u0435 \u043e\u0442\u0432\u0435\u0442\u044b. \u041e\u0442\u0432\u0435\u0442\u044c \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043d\u0438\u0436\u0435.\n\u0412\u0410\u0416\u041d\u041e: \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043c\u043e\u0433 \u0441\u043c\u0435\u043d\u0438\u0442\u044c \u0442\u0435\u043c\u0443. \u0415\u0441\u043b\u0438 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u0440\u043e \u0434\u0440\u0443\u0433\u043e\u0435 \u2014 \u043e\u0442\u0432\u0435\u0447\u0430\u0439 \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 \u0432\u043e\u043f\u0440\u043e\u0441, \u043d\u0435 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0439\u0441\u044f \u043a \u0441\u0442\u0430\u0440\u043e\u0439 \u0442\u0435\u043c\u0435."
+                    discuss_prompt_text += history_note
+        except Exception as e:
+            log("History read failed (non-critical): " + str(e))
 
     messages = [
-        {"role": "system", "content": prompt_text},
+        {"role": "system", "content": discuss_prompt_text},
         {"role": "user", "content": question}
     ]
 
-    resp, _ = run_conversation(messages)
+    resp, messages = run_conversation(messages)
     if resp:
-        log(f"BSA discuss response: {resp[:300]}...")
-        # Auto-write response if BSA did not reply to last question
-        try:
-            import re
-            content = REQUESTS_FILE.read_text(encoding="utf-8")
-            discuss_marker = "-----дискуссия-----"
-            if discuss_marker in content:
-                sec = content.split(discuss_marker)[-1].split("-----контекст")[0]
-                msgs = re.findall(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \*\*(.+?):\*\*\s*(.*)", sec)
-                needs_reply = True
-                if msgs:
-                    for i in range(len(msgs)-1, -1, -1):
-                        ts, author, text = msgs[i]
-                        if author == "Эдди" and text.strip().startswith("ээ"):
-                            has_bsa = any(m[1] == "BSA" for m in msgs[i+1:])
-                            needs_reply = not has_bsa
+        log("BSA discuss response: " + resp[:300] + "...")
+        # Check if BSA already called discuss_reply tool during conversation
+        bsa_used_tool = any(
+            msg.get("role") == "assistant" and
+            any(tc["function"]["name"] == "discuss_reply" for tc in msg.get("tool_calls", []))
+            for msg in messages
+        )
+        telegram_text = resp
+        if not bsa_used_tool:
+            try:
+                tool_discuss_reply(resp)
+                log("Response written to outbox.md (auto-fallback)")
+            except Exception as e:
+                log("Write to outbox.md failed: " + str(e))
+        else:
+            log("BSA already used discuss_reply tool, skipping auto-write")
+            # Extract actual Bizzy answer from outbox.md
+            try:
+                if OUTBOX_FILE.exists():
+                    outbox = OUTBOX_FILE.read_text(encoding="utf-8")
+                    for line in reversed(outbox.split("\n")):
+                        stripped = line.strip()
+                        if stripped.startswith("**Bizzy:**"):
+                            telegram_text = stripped[len("**Bizzy:**"):].strip()
                             break
-                if needs_reply:
-                    tool_discuss_reply(resp)
-                    log("Auto-wrote response via discuss_reply fallback")
-        except Exception as e:
-            log(f"Auto-write failed: {e}")
+            except Exception as e:
+                log("Extract Bizzy answer failed: " + str(e))
         print(resp)
+        _push_to_telegram(telegram_text)
     else:
         log("BSA discuss: completed (tool calls only)")
         print("BSA discuss: completed")
     log("BSA discuss mode completed")
-
 
 def main():
     # Handle --mode trigger
