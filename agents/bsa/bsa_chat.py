@@ -58,7 +58,15 @@ def load_key():
         key = BWVault().get_password("DeepSeek API Key")
         if key: return key
     except: pass
-    return os.environ.get("DEEPSEEK_API_KEY") or ""
+    key = os.environ.get("DEEPSEEK_API_KEY") or ""
+    if key: return key
+    # Fallback: read from .env file
+    env_file = AGENTS_DIR / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith("DEEPSEEK_API_KEY=") and "=" in line:
+                return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
 
 
 _client = None
@@ -271,12 +279,12 @@ def tool_update_status(task_text, status="running", detail=""):
 
         OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
 
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=35)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=35)
         if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + ts], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: status " + ts], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=35)
         return task_text + " \u2192 " + status + " (\u0441\u0435\u043a\u0446\u0438\u044f outbox.md \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0430)"
     except Exception as e:
         log("update_status error: " + str(e))
@@ -356,12 +364,12 @@ def tool_discuss_reply(response_text):
 
         OUTBOX_FILE.write_text("\n".join(lines), encoding="utf-8")
 
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=35)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=35)
         if r.returncode != 0:
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: discuss " + ts], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: discuss " + ts], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=35)
         return "\u2705 Response added to \u0421\u0435\u043a\u0446\u0438\u044f \u0414\u0438\u0441\u043a\u0443\u0441\u0441\u0438\u044f (" + str(len(response_text)) + " chars)"
     except Exception as e:
         log("discuss_reply error: " + str(e))
@@ -427,7 +435,7 @@ def tg_api(method, data=None):
     try:
         body = json.dumps(data).encode() if data else None
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=15)
+        resp = urllib.request.urlopen(req, timeout=35)
         return json.loads(resp.read())
     except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
         log(f"tg_api error ({method}): {e}")
@@ -1276,13 +1284,13 @@ def trigger_mode():
 
     # Auto-commit outbox.md changes if BSA wrote via write_file
     try:
-        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=15)
-        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=15)
+        subprocess.run(["git", "-C", str(VAULT_DIR), "add", "-A"], capture_output=True, timeout=35)
+        r = subprocess.run(["git", "-C", str(VAULT_DIR), "diff", "--cached", "--quiet"], capture_output=True, timeout=35)
         if r.returncode != 0:
             now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: auto-commit " + now], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=15)
-            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=15)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "commit", "-m", "bizzy: auto-commit " + now], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "pull", "--rebase"], capture_output=True, timeout=35)
+            subprocess.run(["git", "-C", str(VAULT_DIR), "push"], capture_output=True, timeout=35)
     except Exception as e:
         log("auto-commit error: " + str(e))
 
@@ -1427,7 +1435,10 @@ def tg_main():
             payload = {"offset": offset + 1, "timeout": 30, "allowed_updates": ["message"]}
             r = tg_api("getUpdates", payload)
             if r and r.get("ok"):
-                for upd in r.get("result", []):
+                updates = r.get("result", [])
+                if updates:
+                    log(f"TG poll got {len(updates)} update(s)")
+                for upd in updates:
                     uid = upd.get("update_id", 0)
                     offset = max(offset, uid)
                     msg = upd.get("message", {})
