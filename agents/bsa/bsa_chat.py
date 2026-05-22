@@ -500,7 +500,7 @@ def tool_check_channel(query):
     try:
         import subprocess, os
         base = "/root/blog-analysis/agents/bsa"
-        cmd = [sys.executable or "python3", os.path.join(base, "channel_checker.py")]
+        cmd = ["/usr/bin/python3", os.path.join(base, "channel_checker.py")]
         parts = query.strip().split()
         if not parts:
             cmd.extend(["--posts", "1"])
@@ -1499,6 +1499,25 @@ def tg_main():
             time.sleep(10)
 
 
+def nightly_mode():
+    """Nightly autonomous mode — iterates through backlog tasks."""
+    log("BSA nightly mode started")
+    prompt = (
+        "Ночной обход: открой бэклог, выполни все задачи которые можешь сделать "
+        "самостоятельно. Работай последовательно, по одной. Начни с приоритетных, "
+        "остальное — по мере сил. Если задача требует моего участия — пропусти и отметь. "
+        "Все результаты сообщишь лаконично в утреннем дайджесте. Отмечай задачи готовыми "
+        "по мере выполнения в бэклоге."
+    )
+    for rnd in range(5):
+        log(f"Nightly round {rnd+1}/5")
+        msg, answer = discuss_mode(prompt, direct_send=False)
+        if answer and any(w in answer.lower() for w in ["закончил", "всё сделано", "notasks", "больше нет", "не осталось", "выполнено"]):
+            break
+        prompt = "Проверь бэклог: есть ли ещё задачи? Если да — продолжи. Если всё — напиши 'всё сделано'."
+    log("BSA nightly mode completed")
+
+
 def main():
     # Handle --tg mode (Telegram polling)
     if "--tg" in sys.argv:
@@ -1515,6 +1534,9 @@ def main():
         if mode == "discuss":
             question = " ".join(sys.argv[idx+2:]) if len(sys.argv) > idx + 2 else ""
             discuss_mode(question)
+            return
+        if mode == "nightly":
+            nightly_mode()
             return
         # else fall through to chat (for future modes)
 
