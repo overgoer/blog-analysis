@@ -1500,21 +1500,37 @@ def tg_main():
 
 
 def nightly_mode():
-    """Nightly autonomous mode — iterates through backlog tasks."""
+    """Nightly autonomous mode — backlog tasks + content generation."""
     log("BSA nightly mode started")
+
+    # Phase 1: Backlog tasks
     prompt = (
-        "Ночной обход: открой бэклог, выполни все задачи которые можешь сделать "
-        "самостоятельно. Работай последовательно, по одной. Начни с приоритетных, "
-        "остальное — по мере сил. Если задача требует моего участия — пропусти и отметь. "
-        "Все результаты сообщишь лаконично в утреннем дайджесте. Отмечай задачи готовыми "
-        "по мере выполнения в бэклоге."
+        "Ночной обход — фаза 1: открой бэклог, выполни все задачи которые можешь "
+        "сделать самостоятельно. Работай последовательно, по одной. Начни с приоритетных. "
+        "Если задача требует моего участия — пропусти и отметь. Отмечай done в бэклоге."
     )
-    for rnd in range(5):
-        log(f"Nightly round {rnd+1}/5")
+    for rnd in range(3):
+        log(f"Nightly backlog round {rnd+1}/3")
         msg, answer = discuss_mode(prompt, direct_send=False)
         if answer and any(w in answer.lower() for w in ["закончил", "всё сделано", "notasks", "больше нет", "не осталось", "выполнено"]):
             break
         prompt = "Проверь бэклог: есть ли ещё задачи? Если да — продолжи. Если всё — напиши 'всё сделано'."
+
+    # Phase 2: Content generation from calendar
+    prompt2 = (
+        "Ночной обход — фаза 2: проверь Календарь.md. Если есть запланированные "
+        "посты со статусом 'черновик' или 'запланирован' без текста — напиши текст "
+        "поста (до 10 за ночь). Начинай с ближайших по дате. Пиши в формате канала. "
+        "Сохраняй черновик write_file в _Архив/Сессии/. Обнови статус в Календарь.md "
+        "на 'написан'. Работай последовательно, по одному посту."
+    )
+    for rnd in range(3):
+        log(f"Nightly content round {rnd+1}/3")
+        msg, answer = discuss_mode(prompt2, direct_send=False)
+        if answer and any(w in answer.lower() for w in ["закончил", "всё сделано", "notasks", "больше нет", "не осталось", "написан"]):
+            break
+        prompt2 = "Есть ещё посты без текста? Если да — продолжи. Если все готовы — напиши 'всё сделано'."
+
     log("BSA nightly mode completed")
 
 
