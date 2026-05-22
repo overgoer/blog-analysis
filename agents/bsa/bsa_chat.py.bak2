@@ -5,8 +5,6 @@ BSA Chat — терминальный чат с Business Strategy Advisor @eddyt
 Запуск:
   python3 bsa_chat.py                       # интерактивный чат
   python3 bsa_chat.py --mode trigger        # однократный триггер от listener
-  python3 bsa_chat.py --mode discuss ...    # ответ на вопрос (от listener)
-  python3 bsa_chat.py --tg                  # Telegram-режим (поллинг + ответы)
 
 Весь контекст, все инструменты, никаких костылей.
 """
@@ -382,109 +380,6 @@ def _push_to_telegram(text):
         log(f"Pushed to Telegram outgoing: {len(text)} chars")
     except Exception as e:
         log(f"Telegram push failed: {e}")
-
-
-# ── Telegram API (direct send, for --tg mode) ───────────
-
-_TG_TOKEN = None
-_TG_CHAT_ID = None
-
-def tg_load_token():
-    global _TG_TOKEN
-    if _TG_TOKEN:
-        return _TG_TOKEN
-    tf = BASE / ".tg_token"
-    if tf.exists():
-        _TG_TOKEN = tf.read_text().strip()
-        return _TG_TOKEN
-    _TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
-    return _TG_TOKEN
-
-
-def tg_load_chat_id():
-    global _TG_CHAT_ID
-    if _TG_CHAT_ID:
-        return _TG_CHAT_ID
-    cf = BASE / ".tg_chat_id"
-    if cf.exists():
-        _TG_CHAT_ID = cf.read_text().strip()
-        return _TG_CHAT_ID
-    return ""
-
-
-def tg_save_chat_id(cid):
-    global _TG_CHAT_ID
-    _TG_CHAT_ID = str(cid)
-    (BASE / ".tg_chat_id").write_text(str(cid))
-
-
-def tg_api(method, data=None):
-    token = tg_load_token()
-    if not token:
-        return None
-    import urllib.request, urllib.error
-    url = f"https://api.telegram.org/bot{token}/{method}"
-    try:
-        body = json.dumps(data).encode() if data else None
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=15)
-        return json.loads(resp.read())
-    except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-        log(f"tg_api error ({method}): {e}")
-        return None
-
-
-def tg_send_message(text, parse_mode="HTML"):
-    cid = tg_load_chat_id()
-    if not cid:
-        log("No chat ID configured, using outgoing queue")
-        _push_to_telegram(text)
-        return False
-
-    safe = _md_to_html(text)
-    if len(safe) > 4096:
-        _tg_send_long(cid, safe, parse_mode)
-        return True
-
-    payload = {"chat_id": int(cid), "text": safe, "disable_notification": False}
-    if parse_mode:
-        payload["parse_mode"] = parse_mode
-    r = tg_api("sendMessage", payload)
-    if r and r.get("ok"):
-        return True
-    # Fallback to plain text
-    payload.pop("parse_mode", None)
-    r = tg_api("sendMessage", payload)
-    return bool(r and r.get("ok"))
-
-
-def _tg_send_long(cid, text, parse_mode):
-    chunks = text.split("\n")
-    for i, chunk in enumerate(chunks):
-        payload = {"chat_id": int(cid), "text": chunk, "disable_notification": i > 0}
-        if parse_mode:
-            payload["parse_mode"] = parse_mode
-        tg_api("sendMessage", payload)
-
-
-def _md_to_html(text):
-    import re
-    text = re.sub(r'```(\w*)\n(.*?)```', r'<code>\2</code>', text, flags=re.DOTALL)
-    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
-    text = re.sub(r'(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)', r'<i>\1</i>', text)
-    text = re.sub(r'(?<!\w)\*(?!\*)(.+?)(?<!\*)\*(?!\w)', r'<i>\1</i>', text)
-    text = re.sub(r'^#{1,3}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
-    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
-    # Escape HTML entities
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    # Restore our tags
-    for tag in ['b', 'i', 'code', 's']:
-        text = text.replace(f'&lt;{tag}&gt;', f'<{tag}>').replace(f'&lt;/{tag}&gt;', f'</{tag}>')
-    return text
-
-
 
 
 def tool_check_channel(query):
@@ -1268,7 +1163,7 @@ def trigger_mode():
 
     log("BSA trigger mode completed")
 
-def discuss_mode(question, direct_send=False):
+def discuss_mode(question):
     """BSA discussion mode: answer user question, write to outbox.md.
     ээ = continue thread (pass history from outbox.md)
     эээ = new thread (fresh context, skip idempotency)"""
@@ -1364,102 +1259,13 @@ def discuss_mode(question, direct_send=False):
             except Exception as e:
                 log("Extract Bizzy answer failed: " + str(e))
         print(resp)
-        if direct_send:
-            tg_send_message(telegram_text)
-        else:
-            _push_to_telegram(telegram_text)
+        _push_to_telegram(telegram_text)
     else:
         log("BSA discuss: completed (tool calls only)")
         print("BSA discuss: completed")
     log("BSA discuss mode completed")
 
-
-def tg_main():
-    """Telegram polling mode — BSA listens and responds directly."""
-    if not tg_load_token():
-        log("ERROR: No TG_BOT_TOKEN in --tg mode")
-        print("ERROR: TG_BOT_TOKEN not found", file=sys.stderr)
-        sys.exit(1)
-    if not load_key():
-        log("ERROR: No DeepSeek API key in --tg mode")
-        print("ERROR: DeepSeek API key not found", file=sys.stderr)
-        sys.exit(1)
-
-    log("BSA Telegram mode started (polling 5s)")
-    offset = 0
-
-    while True:
-        try:
-            payload = {"offset": offset + 1, "timeout": 30, "allowed_updates": ["message"]}
-            r = tg_api("getUpdates", payload)
-            if r and r.get("ok"):
-                for upd in r.get("result", []):
-                    uid = upd.get("update_id", 0)
-                    offset = max(offset, uid)
-                    msg = upd.get("message", {})
-                    chat_id = msg.get("chat", {}).get("id")
-                    text = msg.get("text", "")
-
-                    if not text or not chat_id:
-                        continue
-
-                    # Save chat_id on first message
-                    saved = tg_load_chat_id()
-                    if not saved:
-                        tg_save_chat_id(chat_id)
-                        log(f"Chat ID saved: {chat_id}")
-                    elif str(chat_id) != saved:
-                        log(f"Ignored unknown chat: {chat_id}")
-                        continue
-
-                    log(f"TG msg: {text[:100]}")
-
-                    if text == "/start":
-                        tg_send_message(
-                            "🤖 BSA — Business Strategy Advisor\n\n"
-                            "Пиши любые вопросы по стратегии, контенту, конкурентам.\n"
-                            "Команды: /new — новый разговор, /help — справка"
-                        )
-                        continue
-
-                    if text in ("/help", "/new"):
-                        if text == "/new":
-                            log("TG: /new — new session started on next message")
-                        tg_send_message(
-                            "🤖 *BSA Telegram*\n\n"
-                            "— Любой текст → BSA анализирует\n"
-                            "— /new — сбросить контекст\n"
-                            "— Работает с Obsidian, конкурентами, стратегией"
-                        )
-                        continue
-
-                    if text == "/ping":
-                        tg_send_message("pong")
-                        continue
-
-                    # Add ээ prefix if not already, for compatibility with discuss_mode
-                    if not text.startswith("ээ") and not text.startswith("\u044d\u044d"):
-                        question = f"ээ {text}!"
-                    else:
-                        question = text
-
-                    discuss_mode(question, direct_send=True)
-
-            time.sleep(5)
-        except KeyboardInterrupt:
-            log("TG mode stopped")
-            break
-        except Exception as e:
-            log(f"TG main error: {e}")
-            time.sleep(10)
-
-
 def main():
-    # Handle --tg mode (Telegram polling)
-    if "--tg" in sys.argv:
-        tg_main()
-        return
-
     # Handle --mode trigger
     if "--mode" in sys.argv:
         idx = sys.argv.index("--mode")
