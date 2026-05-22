@@ -828,6 +828,19 @@ def tool_custom_metric_list():
         return f"Runtime config error: {e}"
 
 
+def tool_honcho_recall(question):
+    """Recall past conversations from Honcho memory. Use when you need to remember what was discussed previously. Returns relevant snippets."""
+    try:
+        from honcho_memory import recall
+        chat_id = tg_load_chat_id() or "terminal"
+        results = recall(chat_id, question)
+        if results:
+            return "Past conversations:\n\n" + "\n---\n".join(results)
+        return "Nothing relevant found in memory."
+    except Exception as e:
+        return f"Memory recall error: {e}"
+
+
 TOOLS = [{"type": "function", "function": {
     "name": "read_file",
     "description": "Read file from Obsidian vault, data, or agents config",
@@ -1081,6 +1094,13 @@ TOOLS = [{"type": "function", "function": {
     }, "required": ["channel"]}
 }},
 {"type": "function", "function": {
+    "name": "recall",
+    "description": "Search past conversations for relevant context. Use when you need to remember past discussions, decisions, or facts that came up earlier.",
+    "parameters": {"type": "object", "properties": {
+        "question": {"type": "string", "description": "What to search for in past conversations"}
+    }, "required": ["question"]}
+}},
+{"type": "function", "function": {
     "name": "check_health",
     "description": "Run on-demand health check on Practicum + Free Trial APIs. Tests POST create user + GET verify.",
     "parameters": {"type": "object", "properties": {}}
@@ -1272,6 +1292,13 @@ def discuss_mode(question, direct_send=False):
     """BSA discussion mode: answer user question, write to outbox.md.
     ээ = continue thread (pass history from outbox.md)
     эээ = new thread (fresh context, skip idempotency)"""
+    # Save incoming question to Honcho
+    try:
+        from honcho_memory import save_message
+        chat_id = tg_load_chat_id() or "terminal"
+        save_message(chat_id, "user", question)
+    except Exception:
+        pass
     if not load_key():
         log("ERROR: No API key in discuss mode")
         sys.exit(1)
@@ -1368,6 +1395,13 @@ def discuss_mode(question, direct_send=False):
             tg_send_message(telegram_text)
         else:
             _push_to_telegram(telegram_text)
+        # Save response to Honcho
+        try:
+            from honcho_memory import save_message
+            chat_id = tg_load_chat_id() or "terminal"
+            save_message(chat_id, "assistant", telegram_text)
+        except Exception:
+            pass
     else:
         log("BSA discuss: completed (tool calls only)")
         print("BSA discuss: completed")
